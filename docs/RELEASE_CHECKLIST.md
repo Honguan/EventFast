@@ -2,9 +2,9 @@
 
 目前不是正式 Release，禁止建立 Tag 或 GitHub Release。
 
-最新本機候選：`artifacts/release-20260823-5/win-x64/EventFast.exe`
+最新本機候選：`artifacts/release-20260823-6/win-x64/EventFast.exe`
 
-SHA256：`cab557e46be373e638349f861892d94f2610ca466e5a82c8914663a8652df4fb`
+SHA256：`2f156238323148d1c67de19576f8557b7c7064add16dfc42ad11d6cfe081e0c1`
 
 - [x] .NET 10 Release build 成功，零警告
 - [x] Parser、XPath、Grouping、Classifier、Sorting、Filter、Export mapping 測試成功
@@ -14,7 +14,7 @@ SHA256：`cab557e46be373e638349f861892d94f2610ca466e5a82c8914663a8652df4fb`
 - [x] 第一批 callback 在真實 Event Log 整合測試成功，查詢工作不在 UI thread
 - [x] 10k／100k／500k／1M 群組及 XLSX benchmark 完成
 - [x] 產生的 XLSX 已由本機 Microsoft Excel 開啟並確認兩張工作表
-- [x] 500 次 native query/message 循環（handle -2、private memory +15.3 MB，門檻 +10／+32 MB）
+- [x] 500 次 native query/message 循環（handle -2、private memory +16.0 MB，門檻 +10／+32 MB）
 - [x] SHA256 產生完成
 - [x] `scripts/release.ps1` 已在乾淨工作樹完整執行成功
 - [ ] GitHub Actions CI 已設定，但尚未由遠端 runner 執行
@@ -26,6 +26,6 @@ SHA256：`cab557e46be373e638349f861892d94f2610ca466e5a82c8914663a8652df4fb`
 - [x] XLSX 串流中途 `IOException`：保留原檔並清除暫存檔
 - [ ] 磁碟空間不足時的 Excel 匯出測試
 - [x] 120 分鐘 native query/message soak（300,228 次、handle -3、private memory +17.2 MB）
-- [x] UI 驗證（命令列自動查詢、雙 Channel 32 筆／113 ms；候選檔 Enter、雙擊、Esc、Message/XML）
+- [x] UI 驗證（命令列自動查詢、雙 Channel 33 筆／204 ms；候選檔 Enter、雙擊、Esc、Message/XML）
 - [ ] 無 .NET Runtime／SDK 的 Clean Windows 測試
 - [ ] 人工確認發布
