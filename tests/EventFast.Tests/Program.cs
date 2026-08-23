@@ -17,7 +17,7 @@ var tests = new (string Name, Action Run)[]
     ("Formatted message search", TestFormattedMessageSearch),
     ("XLSX export mapping", TestExport),
     ("XLSX locked-file safety", TestLockedExport),
-    ("XLSX mid-write failure safety", TestInterruptedExport),
+    ("XLSX disk-full safety", TestDiskFullExport),
     ("Unicode and long values", TestUnicode)
 };
 
@@ -214,13 +214,16 @@ static void TestLockedExport()
     });
 }
 
-static void TestInterruptedExport()
+static void TestDiskFullExport()
 {
     WithPath(path =>
     {
         File.WriteAllText(path, "original");
         var temporaryPattern = $"{Path.GetFileName(path)}.*.tmp";
-        AssertThrows<IOException>(() => XlsxExporter.Export(path, [], FailDuringExport()));
+        IOException? failure = null;
+        try { XlsxExporter.Export(path, [], FailDuringExport()); }
+        catch (IOException exception) { failure = exception; }
+        Assert(failure is not null && (failure.HResult & 0xffff) == 112);
         Assert(File.ReadAllText(path) == "original");
         Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(path)!, temporaryPattern).Any());
     });
@@ -228,7 +231,7 @@ static void TestInterruptedExport()
     static IEnumerable<EventRow> FailDuringExport()
     {
         yield return Row(1, "Provider", "first row");
-        throw new IOException("Simulated disk-full write failure.");
+        throw new IOException("磁碟空間不足，無法匯出。", unchecked((int)0x80070070));
     }
 }
 
