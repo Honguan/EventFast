@@ -25,6 +25,6 @@ SHA256：`cab557e46be373e638349f861892d94f2610ca466e5a82c8914663a8652df4fb`
 - [ ] 100,000+ 事件的大型真實 `.evtx` 測試
 - [ ] 磁碟空間不足時的 Excel 匯出測試
 - [x] 120 分鐘 native query/message soak（300,228 次、handle -3、private memory +17.2 MB）
-- [x] 查詢期間 UI 自動化與無凍結驗證（命令列自動查詢、雙 Channel 32 筆，113 ms 完成）
+- [x] UI 驗證（命令列自動查詢、雙 Channel 32 筆／113 ms；候選檔 Enter、雙擊、Esc、Message/XML）
 - [ ] 無 .NET Runtime／SDK 的 Clean Windows 測試
 - [ ] 人工確認發布
