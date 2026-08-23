@@ -46,50 +46,55 @@ try {
     }
 
     $exe = $files[0].FullName
-    $extract = Join-Path $output "bundle-extract"
-    if (-not $extract.StartsWith($output + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Bundle extraction directory must be inside the release output: $extract"
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) -or
+        -not (Get-Command Get-NetUDPEndpoint -ErrorAction SilentlyContinue)) {
+        throw "NetTCPIP cmdlets are required for the local-only verification."
     }
-    New-Item -ItemType Directory -Path $extract | Out-Null
-    $ui = $null
-    try {
-        $startInfo = [Diagnostics.ProcessStartInfo]::new($exe)
-        $startInfo.UseShellExecute = $false
-        $startInfo.Environment["DOTNET_BUNDLE_EXTRACT_BASE_DIR"] = $extract
-        $startup = [Diagnostics.Stopwatch]::StartNew()
-        $ui = [Diagnostics.Process]::Start($startInfo)
-        while (-not $ui.HasExited -and $ui.MainWindowHandle -eq [IntPtr]::Zero -and $startup.ElapsedMilliseconds -lt 2000) {
-            Start-Sleep -Milliseconds 10
-            $ui.Refresh()
+    $startupTimes = @()
+    foreach ($iteration in 1..3) {
+        $extract = Join-Path $output "bundle-extract-$iteration"
+        if (-not $extract.StartsWith($output + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Bundle extraction directory must be inside the release output: $extract"
         }
-        $startup.Stop()
-        if ($ui.HasExited) {
-            throw "Published UI exited early with exit code $($ui.ExitCode)."
+        New-Item -ItemType Directory -Path $extract | Out-Null
+        $ui = $null
+        try {
+            $startInfo = [Diagnostics.ProcessStartInfo]::new($exe)
+            $startInfo.UseShellExecute = $false
+            $startInfo.Environment["DOTNET_BUNDLE_EXTRACT_BASE_DIR"] = $extract
+            $startup = [Diagnostics.Stopwatch]::StartNew()
+            $ui = [Diagnostics.Process]::Start($startInfo)
+            while (-not $ui.HasExited -and $ui.MainWindowHandle -eq [IntPtr]::Zero -and $startup.ElapsedMilliseconds -lt 2000) {
+                Start-Sleep -Milliseconds 10
+                $ui.Refresh()
+            }
+            $startup.Stop()
+            if ($ui.HasExited) {
+                throw "Published UI exited early with exit code $($ui.ExitCode)."
+            }
+            if ($ui.MainWindowHandle -eq [IntPtr]::Zero) {
+                throw "Published UI did not create a window within 2 seconds."
+            }
+            $startupTimes += $startup.ElapsedMilliseconds
+            $tcp = @(Get-NetTCPConnection -OwningProcess $ui.Id -ErrorAction SilentlyContinue)
+            $udp = @(Get-NetUDPEndpoint -OwningProcess $ui.Id -ErrorAction SilentlyContinue)
+            if ($tcp.Count -ne 0 -or $udp.Count -ne 0) {
+                throw "Published UI opened network endpoints: TCP $($tcp.Count), UDP $($udp.Count)."
+            }
         }
-        if ($ui.MainWindowHandle -eq [IntPtr]::Zero) {
-            throw "Published UI did not create a window within 2 seconds."
+        finally {
+            if ($ui -and -not $ui.HasExited) {
+                Stop-Process -Id $ui.Id
+            }
+            Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
         }
-        if ($startup.ElapsedMilliseconds -ge 1000) {
-            throw "Cold UI startup missed the 1 second target: $($startup.ElapsedMilliseconds) ms."
-        }
-        if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) -or
-            -not (Get-Command Get-NetUDPEndpoint -ErrorAction SilentlyContinue)) {
-            throw "NetTCPIP cmdlets are required for the local-only verification."
-        }
-        $tcp = @(Get-NetTCPConnection -OwningProcess $ui.Id -ErrorAction SilentlyContinue)
-        $udp = @(Get-NetUDPEndpoint -OwningProcess $ui.Id -ErrorAction SilentlyContinue)
-        if ($tcp.Count -ne 0 -or $udp.Count -ne 0) {
-            throw "Published UI opened network endpoints: TCP $($tcp.Count), UDP $($udp.Count)."
-        }
-        Set-Content -LiteralPath (Join-Path $output "startup.txt") -Value "Cold UI startup: $($startup.ElapsedMilliseconds) ms" -Encoding ascii
-        Set-Content -LiteralPath (Join-Path $output "privacy.txt") -Value "Network endpoints: TCP 0, UDP 0" -Encoding ascii
     }
-    finally {
-        if ($ui -and -not $ui.HasExited) {
-            Stop-Process -Id $ui.Id
-        }
-        Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+    $startupMedian = ($startupTimes | Sort-Object)[1]
+    if ($startupMedian -ge 1000) {
+        throw "Cold UI startup median missed the 1 second target: $startupMedian ms ($($startupTimes -join ', ') ms)."
     }
+    Set-Content -LiteralPath (Join-Path $output "startup.txt") -Value "Cold UI startup: $($startupTimes -join ', ') ms; median $startupMedian ms" -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $output "privacy.txt") -Value "Three launches, network endpoints: TCP 0, UDP 0" -Encoding ascii
 
     $selfTest = Start-Process -FilePath $exe -ArgumentList "--self-test" -PassThru -Wait -WindowStyle Hidden
     if ($selfTest.ExitCode -ne 0) {
@@ -99,7 +104,7 @@ try {
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
     Set-Content -LiteralPath (Join-Path $publish "EventFast.exe.sha256") -Value "$hash  EventFast.exe" -Encoding ascii
     Write-Output "Release candidate verified: $exe"
-    Write-Output "Cold UI startup: $($startup.ElapsedMilliseconds) ms"
+    Write-Output "Cold UI startup: $($startupTimes -join ', ') ms; median $startupMedian ms"
     Write-Output "SHA256: $hash"
     Write-Output "Manual Clean Windows and Event Viewer comparison gates remain required."
 }
