@@ -42,9 +42,9 @@ JPCERT/CC LogonTracer 固定 commit `b2c2fc6` 的 `Security.evtx`：
 
 - SHA256：`b3f8498d8a99740f7381518fd332cbb67c0bfed0a5b4320d407e485b3ee682fb`
 - Windows `wevtutil` 記錄數：62,031
-- EventFast 第一批：174.7 ms
-- 完整查詢：2.56 s
-- 群組：104.6 ms／61 groups
-- Managed memory：46.6 MB
+- EventFast 第一批：3.5 ms
+- 完整查詢：1.68 s
+- 群組：149.0 ms／61 groups
+- Managed memory：44.9 MB
 
 這份樣本證明超過舊 50k 上限的完整讀取，但沒有達到 100k gate。

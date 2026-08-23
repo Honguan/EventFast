@@ -26,7 +26,9 @@ internal static class WindowsEventReader
     private const int EvtQueryChannelPath = 0x1;
     private const int EvtQueryFilePath = 0x2;
     private const int EvtQueryReverseDirection = 0x200;
+    private const int EvtRenderEventValues = 0;
     private const int EvtRenderEventXml = 1;
+    private const int EvtRenderContextSystem = 1;
     private const int EvtFormatMessageEvent = 1;
     private const int BatchSize = 256;
 
@@ -38,13 +40,14 @@ internal static class WindowsEventReader
         if (query.IsInvalid)
             throw NativeError(channel);
 
+        using var renderer = new SystemRenderer();
         var rows = new List<EventRow>();
         var handles = new IntPtr[BatchSize];
+        var discardedRows = false;
 
         // ponytail: one million matches the documented UI ceiling; add disk-backed paging only beyond it.
         while (rows.Count < maximumRows)
         {
-            var batchStart = rows.Count;
             cancellationToken.ThrowIfCancellationRequested();
             if (!EvtNext(query, handles.Length, handles, 0, 0, out var returned))
             {
@@ -54,19 +57,33 @@ internal static class WindowsEventReader
                 throw NativeError(channel, error);
             }
 
+            var count = Math.Min(returned, maximumRows - rows.Count);
+            discardedRows |= returned > count;
+            var ownedHandles = new EventHandle[count];
             try
             {
-                for (var index = 0; index < returned; index++)
+                var batch = new EventRow[count];
+                for (var index = 0; index < count; index++)
                 {
-                    using var handle = new EventHandle(handles[index]);
+                    var handle = new EventHandle(handles[index]);
+                    ownedHandles[index] = handle;
                     handles[index] = IntPtr.Zero;
-                    rows.Add(Parse(RenderXml(handle), filePath ? channel : null));
-                    if (rows.Count >= maximumRows)
-                        break;
+                    batch[index] = renderer.Render(handle, filePath ? channel : null);
                 }
+
+                if (firstBatch is not null)
+                {
+                    firstBatch(batch);
+                    firstBatch = null;
+                }
+
+                for (var index = 0; index < count; index++)
+                    rows.Add(AddDetails(batch[index], RenderXml(ownedHandles[index])));
             }
             finally
             {
+                foreach (var handle in ownedHandles)
+                    handle?.Dispose();
                 for (var index = 0; index < returned; index++)
                 {
                     if (handles[index] != IntPtr.Zero)
@@ -77,16 +94,13 @@ internal static class WindowsEventReader
                 }
             }
 
-            if (firstBatch is not null)
-            {
-                firstBatch(rows.Skip(batchStart).ToArray());
-                firstBatch = null;
-            }
         }
 
         if (failIfTruncated && rows.Count == maximumRows)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (discardedRows)
+                throw ResultLimit(maximumRows);
             if (EvtNext(query, handles.Length, handles, 0, 0, out var returned))
             {
                 for (var index = 0; index < returned; index++)
@@ -94,7 +108,7 @@ internal static class WindowsEventReader
                     EvtClose(handles[index]);
                     handles[index] = IntPtr.Zero;
                 }
-                throw new InvalidOperationException($"查詢結果超過 {maximumRows:N0} 筆，請縮短時間或增加篩選條件。");
+                throw ResultLimit(maximumRows);
             }
 
             var error = Marshal.GetLastWin32Error();
@@ -104,6 +118,9 @@ internal static class WindowsEventReader
 
         return rows;
     }
+
+    private static InvalidOperationException ResultLimit(int maximumRows) =>
+        new($"查詢結果超過 {maximumRows:N0} 筆，請縮短時間或增加篩選條件。");
 
     internal static string ReadMessage(EventRow row)
     {
@@ -203,27 +220,126 @@ internal static class WindowsEventReader
         }
     }
 
-    private static EventRow Parse(string xml, string? logFilePath)
+    private static EventRow AddDetails(EventRow row, string xml)
     {
         var root = XDocument.Parse(xml).Root ?? throw new InvalidDataException("事件 XML 為空。 ");
-        XNamespace ns = root.Name.Namespace;
-        var system = root.Element(ns + "System") ?? throw new InvalidDataException("事件缺少 System 資料。");
-        var level = (int?)system.Element(ns + "Level") ?? 0;
         var details = string.Join(Environment.NewLine,
             root.Descendants().Where(element => element.Parent?.Name.LocalName is "EventData" or "UserData")
                 .Select(element => element.Value).Where(value => !string.IsNullOrWhiteSpace(value)));
+        return row with { Details = details };
+    }
 
-        return new(
-            DateTime.TryParse((string?)system.Element(ns + "TimeCreated")?.Attribute("SystemTime"), out var time) ? time.ToLocalTime() : DateTime.MinValue,
-            level switch { 1 => "嚴重", 2 => "錯誤", 3 => "警告", 4 => "資訊", 5 => "詳細", _ => "未知" },
-            (int?)system.Element(ns + "EventID") ?? 0,
-            (string?)system.Element(ns + "Provider")?.Attribute("Name") ?? "",
-            (string?)system.Element(ns + "Channel") ?? "",
-            (long?)system.Element(ns + "EventRecordID") ?? 0,
-            (string?)system.Element(ns + "Computer") ?? "",
-            details,
-            "",
-            logFilePath);
+    private sealed class SystemRenderer : IDisposable
+    {
+        private const int PropertyCount = 18;
+        private const int TypeMask = 0x7f;
+        private const int TypeArray = 0x80;
+        private const int TypeNull = 0;
+        private const int TypeString = 1;
+        private const int TypeByte = 4;
+        private const int TypeUInt16 = 6;
+        private const int TypeUInt64 = 10;
+        private const int TypeFileTime = 17;
+
+        private readonly EventHandle _context;
+        private IntPtr _buffer;
+        private int _capacity;
+
+        internal SystemRenderer()
+        {
+            if (IntPtr.Size != 8 || Marshal.SizeOf<EvtVariant>() != 16)
+                throw new PlatformNotSupportedException("EventFast Native renderer 僅支援 Windows x64。");
+            _context = EvtCreateRenderContext(0, IntPtr.Zero, EvtRenderContextSystem);
+            if (_context.IsInvalid)
+                throw NativeError("system render context");
+        }
+
+        internal EventRow Render(EventHandle handle, string? logFilePath)
+        {
+            if (!EvtRender(_context, handle, EvtRenderEventValues, _capacity, _buffer, out var used, out var count))
+            {
+                var error = Marshal.GetLastWin32Error();
+                if (error != ErrorInsufficientBuffer || used <= 0)
+                    throw NativeError("event system fields", error);
+                Resize(used);
+                if (!EvtRender(_context, handle, EvtRenderEventValues, _capacity, _buffer, out used, out count))
+                    throw NativeError("event system fields");
+            }
+
+            if (count < PropertyCount || used < checked(count * 16))
+                throw new InvalidDataException($"事件 System 欄位 buffer 無效：{count} 欄／{used} bytes。");
+
+            var time = Value(8, TypeFileTime);
+            var level = Number(4, TypeByte);
+            return new EventRow(
+                time.Type == TypeNull ? DateTime.MinValue : DateTime.FromFileTimeUtc(checked((long)time.UInt64)).ToLocalTime(),
+                level switch { 1 => "嚴重", 2 => "錯誤", 3 => "警告", 4 => "資訊", 5 => "詳細", _ => "未知" },
+                checked((int)Number(2, TypeUInt16)),
+                Text(0),
+                Text(14),
+                checked((long)Number(9, TypeUInt64)),
+                Text(15),
+                "",
+                "",
+                logFilePath);
+        }
+
+        private EvtVariant Value(int index, int expectedType)
+        {
+            var value = Marshal.PtrToStructure<EvtVariant>(IntPtr.Add(_buffer, index * 16));
+            var type = value.Type & TypeMask;
+            if ((value.Type & TypeArray) != 0 || type is not TypeNull && type != expectedType)
+                throw new InvalidDataException($"事件 System 欄位 {index} 類型錯誤：預期 {expectedType}，實際 {type}。");
+            value.Type = type;
+            return value;
+        }
+
+        private ulong Number(int index, int expectedType)
+        {
+            var value = Value(index, expectedType);
+            return value.Type == TypeNull ? 0 : expectedType switch
+            {
+                TypeByte => value.Byte,
+                TypeUInt16 => value.UInt16,
+                TypeUInt64 => value.UInt64,
+                _ => throw new InvalidOperationException($"不支援的數值類型：{expectedType}。")
+            };
+        }
+
+        private string Text(int index)
+        {
+            var value = Value(index, TypeString);
+            return value.Type == TypeNull ? "" : Marshal.PtrToStringUni(value.Pointer) ?? "";
+        }
+
+        private void Resize(int size)
+        {
+            _buffer = _buffer == IntPtr.Zero
+                ? Marshal.AllocHGlobal(size)
+                : Marshal.ReAllocHGlobal(_buffer, size);
+            _capacity = size;
+        }
+
+        public void Dispose()
+        {
+            _context.Dispose();
+            if (_buffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_buffer);
+                _buffer = IntPtr.Zero;
+            }
+        }
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    private struct EvtVariant
+    {
+        [FieldOffset(0)] internal IntPtr Pointer;
+        [FieldOffset(0)] internal byte Byte;
+        [FieldOffset(0)] internal ushort UInt16;
+        [FieldOffset(0)] internal ulong UInt64;
+        [FieldOffset(8)] internal int Count;
+        [FieldOffset(12)] internal int Type;
     }
 
     private static Exception NativeError(string target, int? code = null)
@@ -251,12 +367,19 @@ internal static class WindowsEventReader
     private static extern EventHandle EvtOpenPublisherMetadata(IntPtr session, string publisherId, string? logFilePath, int locale, int flags);
 
     [DllImport("wevtapi.dll", SetLastError = true)]
+    private static extern EventHandle EvtCreateRenderContext(int valuePathsCount, IntPtr valuePaths, int flags);
+
+    [DllImport("wevtapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EvtNext(EventHandle resultSet, int eventArraySize, [Out] IntPtr[] events, int timeout, int flags, out int returned);
 
     [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EvtRender(IntPtr context, EventHandle fragment, int flags, int bufferSize, IntPtr buffer, out int bufferUsed, out int propertyCount);
+
+    [DllImport("wevtapi.dll", EntryPoint = "EvtRender", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EvtRender(EventHandle context, EventHandle fragment, int flags, int bufferSize, IntPtr buffer, out int bufferUsed, out int propertyCount);
 
     [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

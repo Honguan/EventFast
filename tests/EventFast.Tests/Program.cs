@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Xml.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -34,12 +35,14 @@ if (args.Contains("--integration"))
         var firstBatchSeen = false;
         var rows = WindowsEventReader.Read(channel,
             EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), null, null)), CancellationToken.None, 1,
-            batch => firstBatchSeen = batch.Count > 0);
+            batch => firstBatchSeen = batch.Count > 0 && batch.All(row => row.Details.Length == 0 && row.Xml.Length == 0));
         Assert(rows.Count == 0 || firstBatchSeen);
         if (rows.Count > 0)
         {
             WindowsEventReader.ReadMessage(rows[0]);
-            Assert(WindowsEventReader.ReadXml(rows[0]).Contains("<Event", StringComparison.Ordinal));
+            var xml = WindowsEventReader.ReadXml(rows[0]);
+            Assert(xml.Contains("<Event", StringComparison.Ordinal));
+            AssertSystemFields(rows[0], xml);
         }
         Console.WriteLine($"PASS Native {channel} ({rows.Count} sampled)");
     }
@@ -388,6 +391,18 @@ static void TestUiQueryCompletion()
 
 static EventRow Row(int id, string provider, string details, DateTime? time = null, string level = "錯誤") =>
     new(time ?? DateTime.Now, level, id, provider, "System", id, "PC", details, "<Event />");
+
+static void AssertSystemFields(EventRow row, string xml)
+{
+    var root = XDocument.Parse(xml).Root!;
+    XNamespace ns = root.Name.Namespace;
+    var system = root.Element(ns + "System")!;
+    Assert(row.EventId == (int?)system.Element(ns + "EventID"));
+    Assert(row.Provider == (string?)system.Element(ns + "Provider")?.Attribute("Name"));
+    Assert(row.Channel == (string?)system.Element(ns + "Channel"));
+    Assert(row.RecordId == (long?)system.Element(ns + "EventRecordID"));
+    Assert(row.Computer == (string?)system.Element(ns + "Computer"));
+}
 
 static void WithPath(Action<string> action)
 {
