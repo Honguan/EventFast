@@ -23,6 +23,7 @@ SHA256：`cab557e46be373e638349f861892d94f2610ca466e5a82c8914663a8652df4fb`
 - [x] 62,031 筆公開真實 EVTX 完整讀取（第一批 119.0 ms、47.4 MB managed memory）
 - [x] 非系統管理員讀取受保護 `.evtx` 權限映射測試
 - [ ] 100,000+ 事件的大型真實 `.evtx` 測試
+- [x] XLSX 串流中途 `IOException`：保留原檔並清除暫存檔
 - [ ] 磁碟空間不足時的 Excel 匯出測試
 - [x] 120 分鐘 native query/message soak（300,228 次、handle -3、private memory +17.2 MB）
 - [x] UI 驗證（命令列自動查詢、雙 Channel 32 筆／113 ms；候選檔 Enter、雙擊、Esc、Message/XML）

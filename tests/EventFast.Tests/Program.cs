@@ -17,6 +17,7 @@ var tests = new (string Name, Action Run)[]
     ("Formatted message search", TestFormattedMessageSearch),
     ("XLSX export mapping", TestExport),
     ("XLSX locked-file safety", TestLockedExport),
+    ("XLSX mid-write failure safety", TestInterruptedExport),
     ("Unicode and long values", TestUnicode)
 };
 
@@ -211,6 +212,24 @@ static void TestLockedExport()
         Assert(failed);
         Assert(File.ReadAllText(path) == "original");
     });
+}
+
+static void TestInterruptedExport()
+{
+    WithPath(path =>
+    {
+        File.WriteAllText(path, "original");
+        var temporaryPattern = $"{Path.GetFileName(path)}.*.tmp";
+        AssertThrows<IOException>(() => XlsxExporter.Export(path, [], FailDuringExport()));
+        Assert(File.ReadAllText(path) == "original");
+        Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(path)!, temporaryPattern).Any());
+    });
+
+    static IEnumerable<EventRow> FailDuringExport()
+    {
+        yield return Row(1, "Provider", "first row");
+        throw new IOException("Simulated disk-full write failure.");
+    }
 }
 
 static void TestUnicode()
