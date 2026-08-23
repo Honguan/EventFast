@@ -81,6 +81,12 @@ try {
             if ($tcp.Count -ne 0 -or $udp.Count -ne 0) {
                 throw "Published UI opened network endpoints: TCP $($tcp.Count), UDP $($udp.Count)."
             }
+            if (-not $ui.CloseMainWindow()) {
+                throw "Published UI rejected graceful close."
+            }
+            if (-not $ui.WaitForExit(2000)) {
+                throw "Published UI did not exit within 2 seconds after graceful close."
+            }
         }
         finally {
             if ($ui -and -not $ui.HasExited) {
@@ -95,6 +101,7 @@ try {
     }
     Set-Content -LiteralPath (Join-Path $output "startup.txt") -Value "Cold UI startup: $($startupTimes -join ', ') ms; median $startupMedian ms" -Encoding ascii
     Set-Content -LiteralPath (Join-Path $output "privacy.txt") -Value "Three launches, network endpoints: TCP 0, UDP 0" -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $output "lifecycle.txt") -Value "Three launches exited within 2 seconds after graceful close" -Encoding ascii
 
     $selfTest = Start-Process -FilePath $exe -ArgumentList "--self-test" -PassThru -Wait -WindowStyle Hidden
     if ($selfTest.ExitCode -ne 0) {
@@ -105,6 +112,7 @@ try {
     Set-Content -LiteralPath (Join-Path $publish "EventFast.exe.sha256") -Value "$hash  EventFast.exe" -Encoding ascii
     Write-Output "Release candidate verified: $exe"
     Write-Output "Cold UI startup: $($startupTimes -join ', ') ms; median $startupMedian ms"
+    Write-Output "Graceful close: 3/3 exited within 2 seconds"
     Write-Output "SHA256: $hash"
     Write-Output "Manual Clean Windows and Event Viewer comparison gates remain required."
 }
