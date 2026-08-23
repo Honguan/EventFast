@@ -21,7 +21,7 @@ internal static class EventQuery
         ["all"] = new("全部問題", [], []),
         ["system"] = new("系統錯誤", [], [], ["System"]),
         ["crash"] = new("程式崩潰", ["Application Error", ".NET Runtime", "Windows Error Reporting"], [1000, 1001, 1026], ["Application"]),
-        ["disk"] = new("磁碟 / SSD / NVMe", ["disk", "storahci", "stornvme", "storport", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 129, 153, 157], ["System"]),
+        ["disk"] = new("磁碟 / SSD / NVMe", ["disk", "storahci", "stornvme", "storport", "Ntfs", "Microsoft-Windows-Ntfs", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 55, 98, 129, 140, 153, 157], ["System"]),
         ["ntfs"] = new("NTFS / 檔案系統", ["Ntfs", "Microsoft-Windows-Ntfs"], [55, 98, 140], ["System"]),
         ["usb"] = new("USB / USB-C", ["Microsoft-Windows-DriverFrameworks-UserMode", "Microsoft-Windows-USB-USBHUB3", "UcmUcsiCx"], [10110, 10111], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
         ["device"] = new("裝置", ["Microsoft-Windows-Kernel-PnP", "Kernel-PnP"], [219, 225, 411], ["System", "Microsoft-Windows-Kernel-PnP/Configuration"]),

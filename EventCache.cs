@@ -3,7 +3,7 @@ namespace EventFast;
 internal sealed class EventCache
 {
     private readonly Dictionary<string, Entry> _entries = [];
-    private readonly long _limit = Math.Clamp(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes * 8 / 100, 64L << 20, 1L << 30);
+    private readonly long _limit = Math.Clamp(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes * 8 / 100, 256L << 20, 1L << 30);
     private readonly object _gate = new();
     private long _size;
 

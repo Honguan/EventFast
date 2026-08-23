@@ -19,18 +19,34 @@ public partial class MainWindow : Window, IDisposable
     private string? _eventFile;
     private string _selectedXml = "";
 
-    public MainWindow(string? eventFile = null)
+    internal MainWindow(StartupOptions? options = null)
     {
         InitializeComponent();
         FromDate.SelectedDate = DateTime.Today.AddDays(-1);
         ToDate.SelectedDate = DateTime.Today;
-        _eventFile = eventFile;
+        options ??= new(null, false, null, null, null);
+        _eventFile = options.EventFile;
+        if (options.Today)
+            TimeBox.SelectedIndex = 3;
+        else if (options.Hours is { } hours)
+        {
+            var tag = hours.ToString(CultureInfo.InvariantCulture);
+            var item = TimeBox.Items.OfType<ComboBoxItem>().FirstOrDefault(candidate => candidate.Tag.ToString() == tag);
+            if (item is null)
+            {
+                item = new ComboBoxItem { Tag = tag, Content = $"最近 {hours:N0} 小時" };
+                TimeBox.Items.Insert(TimeBox.Items.Count - 1, item);
+            }
+            TimeBox.SelectedItem = item;
+        }
+        SearchBox.Text = string.Join(' ', new[] { options.Query, options.EventId?.ToString(CultureInfo.InvariantCulture) }.OfType<string>());
         if (_eventFile is not null)
         {
             Title = $"EventFast — {Path.GetFileName(_eventFile)}";
             SystemBox.IsEnabled = ApplicationBox.IsEnabled = false;
-            Loaded += async (_, _) => await RunQueryAsync(null);
         }
+        if (options.AutoRun)
+            Loaded += (_, _) => Dispatcher.BeginInvoke(() => _ = RunQueryAsync(null));
     }
 
     private async void Search_Click(object sender, RoutedEventArgs e) => await RunQueryAsync(null);
@@ -77,7 +93,8 @@ public partial class MainWindow : Window, IDisposable
             var previewRows = new List<EventRow>();
             void ShowFirstBatch(IReadOnlyList<EventRow> batch)
             {
-                var filtered = batch.Where(row => EventQuery.Matches(row, criteria)).ToArray();
+                var searchable = criteria.Keyword is null ? batch : AddMessages(batch, token);
+                var filtered = searchable.Where(row => EventQuery.Matches(row, criteria)).ToArray();
                 Dispatcher.BeginInvoke(() =>
                 {
                     if (token.IsCancellationRequested)
@@ -91,8 +108,11 @@ public partial class MainWindow : Window, IDisposable
             {
                 try
                 {
-                    return (Rows: _cache.GetOrAdd($"{channel}\n{xpath}",
-                        () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch, filePath: _eventFile is not null)), Error: (string?)null, RequiresAdmin: false);
+                    var key = $"{channel}\n{xpath}";
+                    var rawRows = _cache.GetOrAdd(key,
+                        () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch, filePath: _eventFile is not null));
+                    var rows = criteria.Keyword is null ? rawRows : _cache.GetOrAdd($"{key}\nmessages", () => AddMessages(rawRows, token));
+                    return (Rows: rows, Error: (string?)null, RequiresAdmin: false);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -113,7 +133,8 @@ public partial class MainWindow : Window, IDisposable
             AdminButton.Visibility = results.Any(result => result.RequiresAdmin) ? Visibility.Visible : Visibility.Collapsed;
             StatusText.ToolTip = string.Join(Environment.NewLine, results.Select(result => result.Error).OfType<string>());
             var levels = $"嚴重 {rows.Count(row => row.Level == "嚴重"):N0} · 錯誤 {rows.Count(row => row.Level == "錯誤"):N0} · 警告 {rows.Count(row => row.Level == "警告"):N0}";
-            StatusText.Text = $"符合 {rows.Length:N0} 筆 · {levels} · 合併 {groups.Count:N0} 類" + (errors > 0 ? $" · 略過 {errors} 個 Channel" : "");
+            StatusText.Text = $"掃描 {allRows.Length:N0} 筆 · 符合 {rows.Length:N0} 筆 · {levels} · 合併 {groups.Count:N0} 類" +
+                              (errors > 0 ? $" · 略過 {errors} 個 Channel" : "");
         }
         catch (OperationCanceledException)
         {
@@ -244,6 +265,11 @@ public partial class MainWindow : Window, IDisposable
             Clipboard.SetText($"{group.Problem} · Event {group.EventId} · {group.Count:N0} 次 · {group.Provider}");
             e.Handled = true;
         }
+        else if (e.Key == Key.Enter && EventsGrid.SelectedItem is ProblemGroup)
+        {
+            e.Handled = true;
+            await LoadSelectedDetailsAsync();
+        }
         else if (e.Key == Key.Escape)
         {
             EventsGrid.SelectedItem = null;
@@ -269,14 +295,18 @@ public partial class MainWindow : Window, IDisposable
             CustomTimePanel.Visibility = item.Tag.ToString() == "custom" ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private async void EventsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void EventsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        DetailsBox.Text = "";
+        _selectedXml = "";
+    }
+
+    private async void EventsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) => await LoadSelectedDetailsAsync();
+
+    private async Task LoadSelectedDetailsAsync()
     {
         if (EventsGrid.SelectedItem is not ProblemGroup group)
-        {
-            DetailsBox.Text = "";
-            _selectedXml = "";
             return;
-        }
 
         var row = group.Events[^1];
         DetailsBox.Text = "正在載入完整事件訊息…";
@@ -288,6 +318,32 @@ public partial class MainWindow : Window, IDisposable
             $"{group.Problem}\n發生 {group.Count:N0} 次 · 首次 {group.FirstSeen:G} · 最後 {group.LastSeen:G}\n\n" +
             $"{row.Time:G}\n{row.Level} · Event {row.EventId} · {row.Provider}\n" +
             $"{row.Channel} · {row.Computer} · Record {row.RecordId}\n\n{content.Message}\n\n{content.Xml}";
+    }
+
+    internal static IReadOnlyList<EventRow> AddMessages(IReadOnlyList<EventRow> rows, CancellationToken cancellationToken = default)
+    {
+        var result = new EventRow[rows.Count];
+        Parallel.For(0, rows.Count,
+            new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) },
+            WindowsEventReader.CreateMessageFormatter,
+            (index, _, formatter) =>
+            {
+                result[index] = AddMessage(rows[index], formatter.Format);
+                return formatter;
+            },
+            formatter => formatter.Dispose());
+        return result;
+    }
+
+    internal static IReadOnlyList<EventRow> AddMessages(IReadOnlyList<EventRow> rows, Func<EventRow, string> format) =>
+        rows.Select(row => AddMessage(row, format)).ToArray();
+
+    private static EventRow AddMessage(EventRow row, Func<EventRow, string> format)
+    {
+        var message = format(row);
+        return string.IsNullOrWhiteSpace(message) || row.Details.Contains(message, StringComparison.Ordinal)
+            ? row
+            : row with { Details = string.IsNullOrWhiteSpace(row.Details) ? message : $"{row.Details}{Environment.NewLine}{message}" };
     }
 
     private void CopyProblem_Click(object sender, RoutedEventArgs e)

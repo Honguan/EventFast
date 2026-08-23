@@ -72,8 +72,8 @@
             <Button Tag="crash" Content="程式崩潰" Click="Quick_Click" Margin="0,0,6,6" />
             <Button Tag="disk" Content="磁碟 / SSD / NVMe" Click="Quick_Click" Margin="0,0,6,6" />
             <Button Tag="ntfs" Content="NTFS / 檔案系統" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="usb" Content="USB / USB-C" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="device" Content="裝置" Click="Quick_Click" Margin="0,0,6,6" />
+            <Button Tag="usb" Content="USB / USB-C / UCSI" Click="Quick_Click" Margin="0,0,6,6" />
+            <Button Tag="device" Content="裝置 / Kernel-PnP" Click="Quick_Click" Margin="0,0,6,6" />
             <Button Tag="driver" Content="驅動程式" Click="Quick_Click" Margin="0,0,6,6" />
             <Button Tag="whea" Content="硬體 / WHEA" Click="Quick_Click" Margin="0,0,6,6" />
             <Button Tag="network" Content="網路" Click="Quick_Click" Margin="0,0,6,6" />
@@ -84,7 +84,7 @@
         <DataGrid x:Name="EventsGrid" Grid.Row="3" IsReadOnly="True" AutoGenerateColumns="False"
                   EnableRowVirtualization="True" EnableColumnVirtualization="True"
                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                  SelectionChanged="EventsGrid_SelectionChanged">
+                  SelectionChanged="EventsGrid_SelectionChanged" MouseDoubleClick="EventsGrid_MouseDoubleClick">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="等級" Binding="{Binding Severity}" Width="70" />
                 <DataGridTextColumn Header="問題" Binding="{Binding Problem}" Width="2*" />

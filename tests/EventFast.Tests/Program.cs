@@ -13,6 +13,8 @@ var tests = new (string Name, Action Run)[]
     ("XPath/time/level filters", TestXPath),
     ("Keyword and Event ID filters", TestFilters),
     ("Grouping/classifier/sorting", TestGrouping),
+    ("Startup arguments", TestStartupArguments),
+    ("Formatted message search", TestFormattedMessageSearch),
     ("XLSX export mapping", TestExport),
     ("XLSX locked-file safety", TestLockedExport),
     ("Unicode and long values", TestUnicode)
@@ -157,6 +159,23 @@ static void TestGrouping()
     Assert(groups.Count == 2 && groups[0].Problem == "磁碟 I/O 重試" && groups[0].Count == 2 && groups[0].Severity == "錯誤");
 }
 
+static void TestStartupArguments()
+{
+    var options = StartupOptions.Parse(["--hours", "24", "--event-id", "51", "--query", "disk"]);
+    Assert(options.Hours == 24 && options.EventId == 51 && options.Query == "disk" && options.AutoRun);
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--today", "--hours", "1"]));
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--event-id", "65536"]));
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--query", "--today"]));
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--unknown"]));
+}
+
+static void TestFormattedMessageSearch()
+{
+    var row = Row(1000, "Application Error", "payload without product name");
+    var enriched = MainWindow.AddMessages([row], _ => "NVIDIA process crashed")[0];
+    Assert(EventQuery.Matches(enriched, EventQuery.Parse("NVIDIA crash", 3, TimeSpan.FromDays(1))));
+}
+
 static void TestExport()
 {
     WithPath(path =>
@@ -269,9 +288,10 @@ static void TestUiQueryCompletion()
         try
         {
             var app = new Application();
-            var window = new MainWindow();
+            var window = new MainWindow(new(null, false, 24, null, null));
             window.Show();
             window.Hide();
+            Assert(((ComboBoxItem)((ComboBox)window.FindName("TimeBox")).SelectedItem).Tag.ToString() == "24");
             var stopwatch = Stopwatch.StartNew();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
             timer.Tick += (_, _) =>
@@ -294,8 +314,6 @@ static void TestUiQueryCompletion()
                 }
             };
             timer.Start();
-            window.Dispatcher.BeginInvoke(() =>
-                ((Button)window.FindName("SearchButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
             app.Run();
         }
         catch (Exception exception)
