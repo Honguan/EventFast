@@ -15,6 +15,8 @@
 
 完整 Message 關鍵字 `disk`：88.3 ms；相同 24 小時查詢 cold／warm cache：14.1 ms／0.083 ms。
 
+120 分鐘 native query/message soak：300,228 次，handle -3，private memory +17.2 MB。
+
 ## 合成大型資料
 
 | Events | Group | Groups | XLSX export | Export/s | XLSX | Managed RAM |
