@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Xml.Linq;
 using Microsoft.Win32.SafeHandles;
 
@@ -29,6 +31,7 @@ internal static class WindowsEventReader
     private const int EvtRenderEventValues = 0;
     private const int EvtRenderEventXml = 1;
     private const int EvtRenderContextSystem = 1;
+    private const int EvtRenderContextUser = 2;
     private const int EvtFormatMessageEvent = 1;
     private const int BatchSize = 256;
 
@@ -41,6 +44,7 @@ internal static class WindowsEventReader
             throw NativeError(channel);
 
         using var renderer = new SystemRenderer();
+        using var userRenderer = new UserRenderer();
         var rows = new List<EventRow>();
         var handles = new IntPtr[BatchSize];
         var discardedRows = false;
@@ -68,7 +72,9 @@ internal static class WindowsEventReader
                     var handle = new EventHandle(handles[index]);
                     ownedHandles[index] = handle;
                     handles[index] = IntPtr.Zero;
-                    batch[index] = renderer.Render(handle, filePath ? channel : null);
+                    var row = renderer.Render(handle, filePath ? channel : null);
+                    var details = userRenderer.TryRender(handle);
+                    batch[index] = details is null ? AddDetails(row, RenderXml(handle)) : row with { Details = details };
                 }
 
                 if (firstBatch is not null)
@@ -77,8 +83,7 @@ internal static class WindowsEventReader
                     firstBatch = null;
                 }
 
-                for (var index = 0; index < count; index++)
-                    rows.Add(AddDetails(batch[index], RenderXml(ownedHandles[index])));
+                rows.AddRange(batch);
             }
             finally
             {
@@ -224,7 +229,8 @@ internal static class WindowsEventReader
     {
         var root = XDocument.Parse(xml).Root ?? throw new InvalidDataException("事件 XML 為空。 ");
         var details = string.Join(Environment.NewLine,
-            root.Descendants().Where(element => element.Parent?.Name.LocalName is "EventData" or "UserData")
+            root.Descendants().Where(element => !element.HasElements &&
+                    element.Ancestors().Any(ancestor => ancestor.Name.LocalName is "EventData" or "UserData"))
                 .Select(element => element.Value).Where(value => !string.IsNullOrWhiteSpace(value)));
         return row with { Details = details };
     }
@@ -331,15 +337,178 @@ internal static class WindowsEventReader
         }
     }
 
+    private sealed class UserRenderer : IDisposable
+    {
+        private const int TypeMask = 0x7f;
+        private const int TypeArray = 0x80;
+        private const int TypeNull = 0;
+        private const int TypeString = 1;
+        private const int TypeAnsiString = 2;
+        private const int TypeSByte = 3;
+        private const int TypeByte = 4;
+        private const int TypeInt16 = 5;
+        private const int TypeUInt16 = 6;
+        private const int TypeInt32 = 7;
+        private const int TypeUInt32 = 8;
+        private const int TypeInt64 = 9;
+        private const int TypeUInt64 = 10;
+        private const int TypeSingle = 11;
+        private const int TypeDouble = 12;
+        private const int TypeBoolean = 13;
+        private const int TypeBinary = 14;
+        private const int TypeGuid = 15;
+        private const int TypeSizeT = 16;
+        private const int TypeFileTime = 17;
+        private const int TypeSystemTime = 18;
+        private const int TypeSid = 19;
+        private const int TypeHexInt32 = 20;
+        private const int TypeHexInt64 = 21;
+        private const int TypeXml = 35;
+
+        private readonly EventHandle _context;
+        private IntPtr _buffer;
+        private int _capacity;
+
+        internal UserRenderer()
+        {
+            _context = EvtCreateRenderContext(0, IntPtr.Zero, EvtRenderContextUser);
+            if (_context.IsInvalid)
+                throw NativeError("user render context");
+        }
+
+        internal string? TryRender(EventHandle handle)
+        {
+            if (!EvtRender(_context, handle, EvtRenderEventValues, _capacity, _buffer, out var used, out var count))
+            {
+                var error = Marshal.GetLastWin32Error();
+                if (error != ErrorInsufficientBuffer || used <= 0)
+                    throw NativeError("event data", error);
+                Resize(used);
+                if (!EvtRender(_context, handle, EvtRenderEventValues, _capacity, _buffer, out used, out count))
+                    throw NativeError("event data");
+            }
+
+            if (count == 0)
+                return "";
+            if (used < checked(count * 16))
+                throw new InvalidDataException($"事件 EventData buffer 無效：{count} 欄／{used} bytes。");
+
+            var values = new List<string>(count);
+            for (var index = 0; index < count; index++)
+            {
+                var value = Marshal.PtrToStructure<EvtVariant>(IntPtr.Add(_buffer, index * 16));
+                if ((value.Type & TypeArray) != 0)
+                    // ponytail: rare array variants keep the exact XML fallback; add array conversion only if profiling shows it matters.
+                    return null;
+                var text = Text(value, value.Type & TypeMask);
+                if (text is null)
+                    return null;
+                if (!string.IsNullOrWhiteSpace(text))
+                    values.Add(text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n'));
+            }
+            return string.Join(Environment.NewLine, values);
+        }
+
+        private static string? Text(EvtVariant value, int type)
+        {
+            try
+            {
+                return type switch
+                {
+                    TypeNull => "",
+                    TypeString or TypeXml => Marshal.PtrToStringUni(value.Pointer) ?? "",
+                    TypeAnsiString => Marshal.PtrToStringAnsi(value.Pointer) ?? "",
+                    TypeSByte => value.SByte.ToString(CultureInfo.InvariantCulture),
+                    TypeByte => value.Byte.ToString(CultureInfo.InvariantCulture),
+                    TypeInt16 => value.Int16.ToString(CultureInfo.InvariantCulture),
+                    TypeUInt16 => value.UInt16.ToString(CultureInfo.InvariantCulture),
+                    TypeInt32 => value.Int32.ToString(CultureInfo.InvariantCulture),
+                    TypeUInt32 => value.UInt32.ToString(CultureInfo.InvariantCulture),
+                    TypeInt64 => value.Int64.ToString(CultureInfo.InvariantCulture),
+                    TypeUInt64 or TypeSizeT => value.UInt64.ToString(CultureInfo.InvariantCulture),
+                    TypeSingle => value.Single.ToString(CultureInfo.InvariantCulture),
+                    TypeDouble => value.Double.ToString(CultureInfo.InvariantCulture),
+                    TypeBoolean => value.Int32 == 0 ? "false" : "true",
+                    TypeBinary => Binary(value),
+                    TypeGuid => value.Pointer == IntPtr.Zero ? "" : Marshal.PtrToStructure<Guid>(value.Pointer).ToString("B"),
+                    TypeFileTime => DateTime.FromFileTimeUtc(checked((long)value.UInt64)).ToString("O", CultureInfo.InvariantCulture),
+                    TypeSystemTime => SystemTimeText(value.Pointer),
+                    TypeSid => value.Pointer == IntPtr.Zero ? "" : new SecurityIdentifier(value.Pointer).Value,
+                    TypeHexInt32 => $"0x{value.UInt32:x}",
+                    TypeHexInt64 => $"0x{value.UInt64:x}",
+                    _ => null
+                };
+            }
+            catch (Exception exception) when (exception is ArgumentException or OverflowException)
+            {
+                return null;
+            }
+        }
+
+        private static string Binary(EvtVariant value)
+        {
+            if (value.Pointer == IntPtr.Zero || value.Count == 0)
+                return "";
+            var bytes = new byte[value.Count];
+            Marshal.Copy(value.Pointer, bytes, 0, bytes.Length);
+            return Convert.ToHexString(bytes);
+        }
+
+        private static string SystemTimeText(IntPtr pointer)
+        {
+            if (pointer == IntPtr.Zero)
+                return "";
+            var value = Marshal.PtrToStructure<SystemTime>(pointer);
+            return new DateTime(value.Year, value.Month, value.Day, value.Hour, value.Minute, value.Second, value.Milliseconds,
+                DateTimeKind.Utc).ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        private void Resize(int size)
+        {
+            _buffer = _buffer == IntPtr.Zero ? Marshal.AllocHGlobal(size) : Marshal.ReAllocHGlobal(_buffer, size);
+            _capacity = size;
+        }
+
+        public void Dispose()
+        {
+            _context.Dispose();
+            if (_buffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_buffer);
+                _buffer = IntPtr.Zero;
+            }
+        }
+    }
+
     [StructLayout(LayoutKind.Explicit, Size = 16)]
     private struct EvtVariant
     {
         [FieldOffset(0)] internal IntPtr Pointer;
+        [FieldOffset(0)] internal sbyte SByte;
         [FieldOffset(0)] internal byte Byte;
+        [FieldOffset(0)] internal short Int16;
         [FieldOffset(0)] internal ushort UInt16;
+        [FieldOffset(0)] internal int Int32;
+        [FieldOffset(0)] internal uint UInt32;
+        [FieldOffset(0)] internal long Int64;
         [FieldOffset(0)] internal ulong UInt64;
+        [FieldOffset(0)] internal float Single;
+        [FieldOffset(0)] internal double Double;
         [FieldOffset(8)] internal int Count;
         [FieldOffset(12)] internal int Type;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SystemTime
+    {
+        internal ushort Year;
+        internal ushort Month;
+        internal ushort DayOfWeek;
+        internal ushort Day;
+        internal ushort Hour;
+        internal ushort Minute;
+        internal ushort Second;
+        internal ushort Milliseconds;
     }
 
     private static Exception NativeError(string target, int? code = null)

@@ -33,16 +33,25 @@ if (args.Contains("--integration"))
     foreach (var channel in new[] { "System", "Application", "Setup" })
     {
         var firstBatchSeen = false;
+        IReadOnlyList<string>? firstBatchDetails = null;
         var rows = WindowsEventReader.Read(channel,
-            EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), null, null)), CancellationToken.None, 1,
-            batch => firstBatchSeen = batch.Count > 0 && batch.All(row => row.Details.Length == 0 && row.Xml.Length == 0));
-        Assert(rows.Count == 0 || firstBatchSeen);
+            EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), null, null)), CancellationToken.None, 25,
+            batch =>
+            {
+                firstBatchSeen = batch.Count > 0 && batch.All(row => row.Xml.Length == 0);
+                firstBatchDetails = batch.Select(row => row.Details).ToArray();
+            });
+        Assert(rows.Count == 0 || firstBatchSeen && firstBatchDetails!.SequenceEqual(rows.Select(row => row.Details)));
         if (rows.Count > 0)
         {
             WindowsEventReader.ReadMessage(rows[0]);
-            var xml = WindowsEventReader.ReadXml(rows[0]);
-            Assert(xml.Contains("<Event", StringComparison.Ordinal));
-            AssertSystemFields(rows[0], xml);
+            foreach (var row in rows)
+            {
+                var xml = WindowsEventReader.ReadXml(row);
+                Assert(xml.Contains("<Event", StringComparison.Ordinal));
+                AssertSystemFields(row, xml);
+                AssertEventData(row, xml);
+            }
         }
         Console.WriteLine($"PASS Native {channel} ({rows.Count} sampled)");
     }
@@ -402,6 +411,17 @@ static void AssertSystemFields(EventRow row, string xml)
     Assert(row.Channel == (string?)system.Element(ns + "Channel"));
     Assert(row.RecordId == (long?)system.Element(ns + "EventRecordID"));
     Assert(row.Computer == (string?)system.Element(ns + "Computer"));
+}
+
+static void AssertEventData(EventRow row, string xml)
+{
+    var root = XDocument.Parse(xml).Root!;
+    var expected = string.Join(Environment.NewLine,
+        root.Descendants().Where(element => !element.HasElements &&
+                element.Ancestors().Any(ancestor => ancestor.Name.LocalName is "EventData" or "UserData"))
+            .Select(element => element.Value).Where(value => !string.IsNullOrWhiteSpace(value)));
+    if (row.Details != expected)
+        throw new InvalidOperationException($"EventData mismatch. Expected: {expected}\nActual: {row.Details}");
 }
 
 static void WithPath(Action<string> action)
