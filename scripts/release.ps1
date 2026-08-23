@@ -72,7 +72,17 @@ try {
         if ($startup.ElapsedMilliseconds -ge 1000) {
             throw "Cold UI startup missed the 1 second target: $($startup.ElapsedMilliseconds) ms."
         }
+        if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) -or
+            -not (Get-Command Get-NetUDPEndpoint -ErrorAction SilentlyContinue)) {
+            throw "NetTCPIP cmdlets are required for the local-only verification."
+        }
+        $tcp = @(Get-NetTCPConnection -OwningProcess $ui.Id -ErrorAction SilentlyContinue)
+        $udp = @(Get-NetUDPEndpoint -OwningProcess $ui.Id -ErrorAction SilentlyContinue)
+        if ($tcp.Count -ne 0 -or $udp.Count -ne 0) {
+            throw "Published UI opened network endpoints: TCP $($tcp.Count), UDP $($udp.Count)."
+        }
         Set-Content -LiteralPath (Join-Path $output "startup.txt") -Value "Cold UI startup: $($startup.ElapsedMilliseconds) ms" -Encoding ascii
+        Set-Content -LiteralPath (Join-Path $output "privacy.txt") -Value "Network endpoints: TCP 0, UDP 0" -Encoding ascii
     }
     finally {
         if ($ui -and -not $ui.HasExited) {
