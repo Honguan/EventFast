@@ -9,6 +9,7 @@ dotnet publish -p:PublishProfile=win-x64
 ./scripts/release.ps1 -OutputDirectory artifacts/release-candidate
 ./scripts/download-large-testdata.ps1
 dotnet run --project tests/EventFast.Tests -c Release -- --large-evtx artifacts/testdata/security_big_sample.evtx
+dotnet run --project tests/EventFast.Tests -c Release -- --soak-minutes 120
 ```
 
 發布後可直接使用：

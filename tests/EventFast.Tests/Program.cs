@@ -103,7 +103,15 @@ if (args.Contains("--excel"))
     TestExcelOpen();
 
 if (args.Contains("--leak"))
-    TestNativeLeaks();
+    TestNativeLeaks(null);
+
+var soakIndex = Array.IndexOf(args, "--soak-minutes");
+if (soakIndex >= 0)
+{
+    if (soakIndex + 1 >= args.Length || !int.TryParse(args[soakIndex + 1], out var minutes) || minutes <= 0)
+        throw new ArgumentException("--soak-minutes requires a positive integer.");
+    TestNativeLeaks(TimeSpan.FromMinutes(minutes));
+}
 
 if (args.Contains("--ui"))
     TestUiQueryCompletion();
@@ -249,7 +257,7 @@ static void TestExcelOpen()
     });
 }
 
-static void TestNativeLeaks()
+static void TestNativeLeaks(TimeSpan? duration)
 {
     var xpath = EventQuery.BuildXPath(new(0, TimeSpan.FromHours(24), null, null));
     for (var warmup = 0; warmup < 10; warmup++)
@@ -264,11 +272,14 @@ static void TestNativeLeaks()
     process.Refresh();
     var handles = process.HandleCount;
     var memory = process.PrivateMemorySize64;
-    for (var iteration = 0; iteration < 500; iteration++)
+    var stopwatch = Stopwatch.StartNew();
+    var iterations = 0;
+    while (duration is { } soak ? stopwatch.Elapsed < soak : iterations < 500)
     {
         var rows = WindowsEventReader.Read("System", xpath, CancellationToken.None, 1);
         if (rows.Count > 0)
             WindowsEventReader.ReadMessage(rows[0]);
+        iterations++;
     }
     GC.Collect();
     GC.WaitForPendingFinalizers();
@@ -276,7 +287,8 @@ static void TestNativeLeaks()
     var handleGrowth = process.HandleCount - handles;
     var memoryGrowth = process.PrivateMemorySize64 - memory;
     Assert(handleGrowth <= 10 && memoryGrowth < 32L * 1024 * 1024);
-    Console.WriteLine($"PASS Native leak loop (500 runs, handles {handleGrowth:+#;-#;0}, private memory {memoryGrowth / 1048576d:+0.0;-0.0;0.0} MB)");
+    Console.WriteLine($"PASS Native {(duration is null ? "leak loop" : "soak")} ({iterations:N0} runs/{stopwatch.Elapsed}, " +
+                      $"handles {handleGrowth:+#;-#;0}, private memory {memoryGrowth / 1048576d:+0.0;-0.0;0.0} MB)");
 }
 
 static void TestUiQueryCompletion()
