@@ -150,6 +150,14 @@ if (largeEvtxIndex >= 0 && largeEvtxIndex + 1 < args.Length)
         $"group {stopwatch.Elapsed.TotalMilliseconds:F1} ms/{groups.Count:N0} groups, {GC.GetTotalMemory(false) / 1048576d:F1} MB managed)");
 }
 
+var actualDiskFullIndex = Array.IndexOf(args, "--actual-disk-full");
+if (actualDiskFullIndex >= 0)
+{
+    if (actualDiskFullIndex + 1 >= args.Length)
+        throw new ArgumentException("--actual-disk-full requires an output path.");
+    TestActualDiskFull(args[actualDiskFullIndex + 1]);
+}
+
 return;
 
 static void TestParser()
@@ -248,6 +256,26 @@ static void TestDiskFullExport()
     {
         yield return Row(1, "Provider", "first row");
         throw new IOException("磁碟空間不足，無法匯出。", unchecked((int)0x80070070));
+    }
+}
+
+static void TestActualDiskFull(string path)
+{
+    File.WriteAllText(path, "original");
+    var temporaryPattern = $"{Path.GetFileName(path)}.*.tmp";
+    IOException? failure = null;
+    try { XlsxExporter.Export(path, [], Rows()); }
+    catch (IOException exception) { failure = exception; }
+    Assert(failure is not null && (failure.HResult & 0xffff) == 112);
+    Assert(File.ReadAllText(path) == "original");
+    Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(path)!, temporaryPattern).Any());
+    Console.WriteLine($"PASS Actual disk-full XLSX safety (HRESULT 0x{failure!.HResult:x8})");
+
+    static IEnumerable<EventRow> Rows()
+    {
+        for (var index = 0; index < 1_000_000; index++)
+            yield return Row(index % 65_536, $"Provider-{index % 100}",
+                $"Disk-full validation row {index:x8} {unchecked((ulong)index * 2_654_435_761UL):x16}");
     }
 }
 

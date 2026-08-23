@@ -28,7 +28,7 @@ SHA256：`79f8cbb098bcd656e916d2b0a245f41dedbc22cda24c5a67c7350bc5fd8d077d`
 - [ ] 100,000+ 事件的大型真實 `.evtx` 測試
 - [x] Native 查詢超過每 Channel 1,000,000 筆時明確提示，不靜默截斷
 - [x] XLSX 精確 `ERROR_DISK_FULL`（112）故障注入：保留原檔並清除暫存檔
-- [ ] 隔離磁碟實際空間耗盡時的 Excel 匯出測試
+- [x] WSL 隔離 4 MB tmpfs 實際耗盡：Windows 回傳 `0x80070070`，原 XLSX 保留、暫存檔清除
 - [x] 120 分鐘 native query/message soak（300,228 次、handle -3、private memory +17.2 MB）
 - [x] UI 自動驗證群組事件展開與查詢完成後保留排序
 - [x] UI 驗證（命令列自動查詢、雙 Channel 36 筆／174 ms；候選檔 Enter、雙擊、Esc、Message/XML）
