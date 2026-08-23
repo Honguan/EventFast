@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -68,7 +69,7 @@ internal static class XlsxExporter
     private static void WriteRow(XmlWriter writer, int rowNumber, IEnumerable<object?> values)
     {
         writer.WriteStartElement("row", Spreadsheet);
-        writer.WriteAttributeString("r", rowNumber.ToString());
+        writer.WriteAttributeString("r", rowNumber.ToString(CultureInfo.InvariantCulture));
         var column = 0;
         foreach (var value in values)
         {
@@ -76,13 +77,15 @@ internal static class XlsxExporter
             writer.WriteAttributeString("r", $"{(char)('A' + column++)}{rowNumber}");
             if (value is byte or short or int or long or float or double or decimal)
             {
-                writer.WriteElementString("v", Spreadsheet, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                writer.WriteElementString("v", Spreadsheet, Convert.ToString(value, CultureInfo.InvariantCulture));
             }
             else
             {
                 writer.WriteAttributeString("t", "inlineStr");
                 writer.WriteStartElement("is", Spreadsheet);
-                writer.WriteElementString("t", Spreadsheet, Clean(value is DateTime time ? time.ToString("yyyy-MM-dd HH:mm:ss") : value?.ToString() ?? ""));
+                writer.WriteElementString("t", Spreadsheet, Clean(value is DateTime time
+                    ? time.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+                    : value?.ToString() ?? ""));
                 writer.WriteEndElement();
             }
             writer.WriteEndElement();

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace EventFast;
 
 internal sealed record QueryCriteria(
@@ -85,7 +87,7 @@ internal static class EventQuery
         throw new ArgumentException("Provider 不可同時包含單引號與雙引號。", nameof(value));
     }
 
-    private static string Utc(DateTime value) => value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+    private static string Utc(DateTime value) => value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
 
     internal static void SelfTest()
     {

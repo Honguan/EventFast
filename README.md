@@ -6,6 +6,7 @@ Windows Event Log 高速查詢工具。
 dotnet run
 dotnet run -- --self-test
 dotnet publish -p:PublishProfile=win-x64
+./scripts/release.ps1 -OutputDirectory artifacts/release-candidate
 ```
 
 需要 .NET 10 SDK；正式發布產物為 Windows x64 self-contained single-file。
@@ -20,3 +21,5 @@ dotnet publish -p:PublishProfile=win-x64
 - `.evtx` 啟動參數與拖放離線分析
 
 正式 Release 尚須完成企劃中的完整測試、Benchmark、.NET 10 單檔發布與 Clean Machine gate。
+
+GitHub Actions 僅執行 build 與測試；沒有自動 Tag 或 Release。`release.ps1` 也只建立本機候選檔，仍需人工完成 Release gate。

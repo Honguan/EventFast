@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,7 +9,7 @@ using Microsoft.Win32;
 
 namespace EventFast;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IDisposable
 {
     private CancellationTokenSource? _queryCancellation;
     private readonly EventCache _cache = new();
@@ -60,7 +61,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var maximumLevel = int.Parse(((ComboBoxItem)LevelBox.SelectedItem).Tag.ToString()!);
+            var maximumLevel = int.Parse(((ComboBoxItem)LevelBox.SelectedItem).Tag.ToString()!, CultureInfo.InvariantCulture);
             var period = SelectedPeriod();
             var criteria = quick is null
                 ? EventQuery.Parse(SearchBox.Text, maximumLevel, period)
@@ -257,7 +258,7 @@ public partial class MainWindow : Window
         {
             "today" => DateTime.Now - DateTime.Today,
             "custom" => TimeSpan.FromDays(1),
-            _ => TimeSpan.FromHours(double.Parse(tag))
+            _ => TimeSpan.FromHours(double.Parse(tag, CultureInfo.InvariantCulture))
         };
     }
 
@@ -306,8 +307,15 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        Dispose();
+        base.OnClosed(e);
+    }
+
+    public void Dispose()
+    {
         _queryCancellation?.Cancel();
         _queryCancellation?.Dispose();
-        base.OnClosed(e);
+        _queryCancellation = null;
+        GC.SuppressFinalize(this);
     }
 }

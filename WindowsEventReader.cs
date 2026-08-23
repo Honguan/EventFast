@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Xml.Linq;
 using Microsoft.Win32.SafeHandles;
 
@@ -124,14 +123,21 @@ internal static class WindowsEventReader
                 return row.Details;
             }
 
-            EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, 0, null, out var size);
+            EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, 0, IntPtr.Zero, out var size);
             if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer || size == 0)
                 return row.Details;
 
-            var buffer = new StringBuilder(size);
-            return EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, size, buffer, out _)
-                ? buffer.ToString()
-                : row.Details;
+            var buffer = Marshal.AllocHGlobal(checked(size * sizeof(char)));
+            try
+            {
+                return EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, size, buffer, out _)
+                    ? Marshal.PtrToStringUni(buffer) ?? row.Details
+                    : row.Details;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
         }
 
         public void Dispose()
@@ -144,15 +150,22 @@ internal static class WindowsEventReader
 
     private static string RenderXml(EventHandle handle)
     {
-        EvtRender(IntPtr.Zero, handle, EvtRenderEventXml, 0, null, out var size, out _);
+        EvtRender(IntPtr.Zero, handle, EvtRenderEventXml, 0, IntPtr.Zero, out var size, out _);
         var error = Marshal.GetLastWin32Error();
         if (error != ErrorInsufficientBuffer)
             throw NativeError("event", error);
 
-        var buffer = new StringBuilder(size / sizeof(char));
-        if (!EvtRender(IntPtr.Zero, handle, EvtRenderEventXml, size, buffer, out _, out _))
-            throw NativeError("event");
-        return buffer.ToString();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!EvtRender(IntPtr.Zero, handle, EvtRenderEventXml, size, buffer, out _, out _))
+                throw NativeError("event");
+            return Marshal.PtrToStringUni(buffer) ?? "";
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
     }
 
     private static EventRow Parse(string xml, string? logFilePath)
@@ -208,12 +221,12 @@ internal static class WindowsEventReader
 
     [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool EvtRender(IntPtr context, EventHandle fragment, int flags, int bufferSize, StringBuilder? buffer, out int bufferUsed, out int propertyCount);
+    private static extern bool EvtRender(IntPtr context, EventHandle fragment, int flags, int bufferSize, IntPtr buffer, out int bufferUsed, out int propertyCount);
 
     [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EvtFormatMessage(EventHandle publisherMetadata, EventHandle eventHandle, int messageId, int valueCount,
-        IntPtr values, int flags, int bufferSize, StringBuilder? buffer, out int bufferUsed);
+        IntPtr values, int flags, int bufferSize, IntPtr buffer, out int bufferUsed);
 
     [DllImport("wevtapi.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
