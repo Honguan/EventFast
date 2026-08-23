@@ -127,7 +127,7 @@ public partial class MainWindow : Window, IDisposable
             _rows = rows;
             _allRows = allRows;
             _groups = groups;
-            EventsGrid.ItemsSource = groups;
+            ApplySort();
             ExportButton.IsEnabled = groups.Count > 0;
             var errors = results.Count(result => result.Error is not null);
             AdminButton.Visibility = results.Any(result => result.RequiresAdmin) ? Visibility.Visible : Visibility.Collapsed;
@@ -231,15 +231,22 @@ public partial class MainWindow : Window, IDisposable
         if (EventsGrid is null || SortBox.SelectedItem is not ComboBoxItem item)
             return;
 
-        IEnumerable<ProblemGroup> sorted = item.Tag.ToString() switch
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        if (EventsGrid is null || SortBox.SelectedItem is not ComboBoxItem item)
+            return;
+
+        EventsGrid.ItemsSource = (item.Tag.ToString() switch
         {
             "latest" => _groups.OrderByDescending(group => group.LastSeen),
             "frequent" => _groups.OrderByDescending(group => group.Count),
             "eventId" => _groups.OrderBy(group => group.EventId),
             "provider" => _groups.OrderBy(group => group.Provider),
             _ => _groups.AsEnumerable()
-        };
-        EventsGrid.ItemsSource = sorted.ToArray();
+        }).ToArray();
     }
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -264,6 +271,11 @@ public partial class MainWindow : Window, IDisposable
         {
             Clipboard.SetText($"{group.Problem} · Event {group.EventId} · {group.Count:N0} 次 · {group.Provider}");
             e.Handled = true;
+        }
+        else if (e.Key == Key.Enter && OccurrencesGrid.IsKeyboardFocusWithin && OccurrencesGrid.SelectedItem is EventRow occurrence)
+        {
+            e.Handled = true;
+            await LoadSelectedDetailsAsync(occurrence);
         }
         else if (e.Key == Key.Enter && EventsGrid.SelectedItem is ProblemGroup)
         {
@@ -299,16 +311,34 @@ public partial class MainWindow : Window, IDisposable
     {
         DetailsBox.Text = "";
         _selectedXml = "";
+        if (EventsGrid.SelectedItem is ProblemGroup group)
+        {
+            OccurrencesGrid.ItemsSource = group.Events;
+            OccurrencesTab.Header = $"群組事件 ({group.Count:N0})";
+            DetailsTabs.SelectedIndex = 0;
+        }
+        else
+        {
+            OccurrencesGrid.ItemsSource = null;
+            OccurrencesTab.Header = "群組事件";
+        }
     }
 
     private async void EventsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) => await LoadSelectedDetailsAsync();
 
-    private async Task LoadSelectedDetailsAsync()
+    private async void OccurrencesGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (OccurrencesGrid.SelectedItem is EventRow row)
+            await LoadSelectedDetailsAsync(row);
+    }
+
+    private async Task LoadSelectedDetailsAsync(EventRow? selectedRow = null)
     {
         if (EventsGrid.SelectedItem is not ProblemGroup group)
             return;
 
-        var row = group.Events[^1];
+        var row = selectedRow ?? group.Events[^1];
+        DetailsTabs.SelectedIndex = 1;
         DetailsBox.Text = "正在載入完整事件訊息…";
         var content = await Task.Run(() => (Message: WindowsEventReader.ReadMessage(row), Xml: WindowsEventReader.ReadXml(row)));
         if (!ReferenceEquals(EventsGrid.SelectedItem, group))

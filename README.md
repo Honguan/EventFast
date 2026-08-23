@@ -28,7 +28,7 @@ EventFast.exe C:\Logs\system.evtx
 
 - System／Application 原生平行批次查詢
 - 1 小時至 30 天／自訂時間、等級、Event ID、完整 Message 文字與混合條件
-- 快速問題分類、重複事件群組、排序與 RAM 快取
+- 快速問題分類、重複事件群組、虛擬化群組事件明細、排序與 RAM 快取
 - 選取時才載入完整 Message 與 XML
 - 串流 `.xlsx` 問題摘要／完整事件匯出
 - 查詢啟動參數、`.evtx` 啟動參數與拖放離線分析

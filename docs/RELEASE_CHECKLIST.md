@@ -29,6 +29,7 @@ SHA256：`3d50e09a66cbb53921b5fd16b678fd5798726c74f13c7755d44a625261c3c17c`
 - [x] XLSX 精確 `ERROR_DISK_FULL`（112）故障注入：保留原檔並清除暫存檔
 - [ ] 隔離磁碟實際空間耗盡時的 Excel 匯出測試
 - [x] 120 分鐘 native query/message soak（300,228 次、handle -3、private memory +17.2 MB）
+- [x] UI 自動驗證群組事件展開與查詢完成後保留排序
 - [x] UI 驗證（命令列自動查詢、雙 Channel 33 筆／219 ms；候選檔 Enter、雙擊、Esc、Message/XML）
 - [ ] 無 .NET Runtime／SDK 的 Clean Windows 測試
 - [ ] 人工確認發布

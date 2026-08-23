@@ -9,7 +9,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="190" />
+            <RowDefinition Height="240" />
         </Grid.RowDefinitions>
 
         <DockPanel LastChildFill="True">
@@ -95,17 +95,36 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <GroupBox Grid.Row="4" Header="事件詳細資料" Margin="0,12,0,0">
-            <Grid>
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                    <Button Content="複製問題" Click="CopyProblem_Click" Margin="0,0,6,0" />
-                    <Button Content="複製完整內容" Click="CopyFull_Click" Margin="0,0,6,0" />
-                    <Button Content="複製 XML" Click="CopyXml_Click" />
-                </StackPanel>
-                <TextBox x:Name="DetailsBox" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
-            </Grid>
+        <GroupBox Grid.Row="4" Header="問題詳細資料" Margin="0,12,0,0">
+            <TabControl x:Name="DetailsTabs">
+                <TabItem x:Name="OccurrencesTab" Header="群組事件">
+                    <DataGrid x:Name="OccurrencesGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                              EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                              MouseDoubleClick="OccurrencesGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="時間" Binding="{Binding Time}" Width="160" />
+                            <DataGridTextColumn Header="等級" Binding="{Binding Level}" Width="70" />
+                            <DataGridTextColumn Header="Event ID" Binding="{Binding EventId}" Width="85" />
+                            <DataGridTextColumn Header="來源" Binding="{Binding Provider}" Width="2*" />
+                            <DataGridTextColumn Header="Channel" Binding="{Binding Channel}" Width="2*" />
+                            <DataGridTextColumn Header="Record ID" Binding="{Binding RecordId}" Width="100" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
+                <TabItem Header="事件內容">
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Button Content="複製問題" Click="CopyProblem_Click" Margin="0,0,6,0" />
+                            <Button Content="複製完整內容" Click="CopyFull_Click" Margin="0,0,6,0" />
+                            <Button Content="複製 XML" Click="CopyXml_Click" />
+                        </StackPanel>
+                        <TextBox x:Name="DetailsBox" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                    </Grid>
+                </TabItem>
+            </TabControl>
         </GroupBox>
     </Grid>
 </Window>

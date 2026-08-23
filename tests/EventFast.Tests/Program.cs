@@ -323,6 +323,19 @@ static void TestUiQueryCompletion()
         {
             var app = new Application();
             var window = new MainWindow(new(null, false, 24, null, null));
+            var eventsGrid = (DataGrid)window.FindName("EventsGrid");
+            var occurrencesGrid = (DataGrid)window.FindName("OccurrencesGrid");
+            var sampleRows = new[]
+            {
+                Row(153, "disk", "Retry sector 1"),
+                Row(153, "disk", "Retry sector 2")
+            };
+            var sampleGroup = ProblemGrouping.Group(sampleRows)[0];
+            eventsGrid.ItemsSource = new[] { sampleGroup };
+            eventsGrid.SelectedItem = sampleGroup;
+            Assert(occurrencesGrid.Items.Count == 2);
+            Assert(((TabItem)window.FindName("OccurrencesTab")).Header.ToString()!.Contains("2"));
+            ((ComboBox)window.FindName("SortBox")).SelectedIndex = 3;
             window.Show();
             window.Hide();
             Assert(((ComboBoxItem)((ComboBox)window.FindName("TimeBox")).SelectedItem).Tag.ToString() == "24");
@@ -334,6 +347,8 @@ static void TestUiQueryCompletion()
                 var searchEnabled = ((Button)window.FindName("SearchButton")).IsEnabled;
                 if (searchEnabled && !status.Contains("查詢中", StringComparison.Ordinal))
                 {
+                    var eventIds = eventsGrid.Items.Cast<ProblemGroup>().Select(group => group.EventId).ToArray();
+                    Assert(eventIds.SequenceEqual(eventIds.Order()));
                     timer.Stop();
                     window.Close();
                     app.Shutdown();
