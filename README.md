@@ -7,6 +7,8 @@ dotnet run
 dotnet run -- --self-test
 dotnet publish -p:PublishProfile=win-x64
 ./scripts/release.ps1 -OutputDirectory artifacts/release-candidate
+./scripts/download-large-testdata.ps1
+dotnet run --project tests/EventFast.Tests -c Release -- --large-evtx artifacts/testdata/security_big_sample.evtx
 ```
 
 需要 .NET 10 SDK；正式發布產物為 Windows x64 self-contained single-file。

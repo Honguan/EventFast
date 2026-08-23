@@ -30,7 +30,10 @@ if (args.Contains("--integration"))
             batch => firstBatchSeen = batch.Count > 0);
         Assert(rows.Count == 0 || firstBatchSeen);
         if (rows.Count > 0)
+        {
             WindowsEventReader.ReadMessage(rows[0]);
+            Assert(WindowsEventReader.ReadXml(rows[0]).Contains("<Event", StringComparison.Ordinal));
+        }
         Console.WriteLine($"PASS Native {channel} ({rows.Count} sampled)");
     }
 
@@ -43,6 +46,13 @@ if (args.Contains("--integration"))
         foreach (var row in messageRows)
             formatter.Format(row);
     Console.WriteLine($"PASS Cached publisher message formatting ({messageRows.Count} sampled)");
+    WithPath(path =>
+    {
+        using var formatter = WindowsEventReader.CreateMessageFormatter();
+        XlsxExporter.Export(path, ProblemGrouping.Group(messageRows), messageRows, true, formatter.Format, WindowsEventReader.ReadXml);
+        Assert(new FileInfo(path).Length > 0);
+    });
+    Console.WriteLine("PASS Native Message/XML XLSX export");
 
     AssertThrows<InvalidOperationException>(() => WindowsEventReader.Read("EventFast-Missing-Channel", "*", CancellationToken.None));
     Console.WriteLine("PASS Missing channel error mapping");
@@ -88,6 +98,23 @@ if (args.Contains("--excel"))
 
 if (args.Contains("--leak"))
     TestNativeLeaks();
+
+var largeEvtxIndex = Array.IndexOf(args, "--large-evtx");
+if (largeEvtxIndex >= 0 && largeEvtxIndex + 1 < args.Length)
+{
+    var stopwatch = Stopwatch.StartNew();
+    double firstBatch = 0;
+    var rows = WindowsEventReader.Read(args[largeEvtxIndex + 1], "*", CancellationToken.None,
+        firstBatch: _ => firstBatch = stopwatch.Elapsed.TotalMilliseconds, filePath: true);
+    stopwatch.Stop();
+    Assert(rows.Count > 50_000 && rows.All(row => row.Xml.Length == 0));
+    var querySeconds = stopwatch.Elapsed.TotalSeconds;
+    stopwatch.Restart();
+    var groups = ProblemGrouping.Group(rows);
+    stopwatch.Stop();
+    Console.WriteLine($"PASS Large EVTX ({rows.Count:N0} events, first batch {firstBatch:F1} ms, query {querySeconds:F2} s, " +
+        $"group {stopwatch.Elapsed.TotalMilliseconds:F1} ms/{groups.Count:N0} groups, {GC.GetTotalMemory(false) / 1048576d:F1} MB managed)");
+}
 
 return;
 

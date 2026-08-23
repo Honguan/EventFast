@@ -17,6 +17,7 @@ public partial class MainWindow : Window, IDisposable
     private IReadOnlyList<EventRow> _rows = [];
     private IReadOnlyList<EventRow> _allRows = [];
     private string? _eventFile;
+    private string _selectedXml = "";
 
     public MainWindow(string? eventFile = null)
     {
@@ -190,7 +191,7 @@ public partial class MainWindow : Window, IDisposable
             await Task.Run(() =>
             {
                 using var formatter = WindowsEventReader.CreateMessageFormatter();
-                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, formatter.Format);
+                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, formatter.Format, WindowsEventReader.ReadXml);
             });
             StatusText.Text = $"已匯出 {Path.GetFileName(dialog.FileName)}";
         }
@@ -273,18 +274,20 @@ public partial class MainWindow : Window, IDisposable
         if (EventsGrid.SelectedItem is not ProblemGroup group)
         {
             DetailsBox.Text = "";
+            _selectedXml = "";
             return;
         }
 
         var row = group.Events[^1];
         DetailsBox.Text = "正在載入完整事件訊息…";
-        var message = await Task.Run(() => WindowsEventReader.ReadMessage(row));
+        var content = await Task.Run(() => (Message: WindowsEventReader.ReadMessage(row), Xml: WindowsEventReader.ReadXml(row)));
         if (!ReferenceEquals(EventsGrid.SelectedItem, group))
             return;
+        _selectedXml = content.Xml;
         DetailsBox.Text =
             $"{group.Problem}\n發生 {group.Count:N0} 次 · 首次 {group.FirstSeen:G} · 最後 {group.LastSeen:G}\n\n" +
             $"{row.Time:G}\n{row.Level} · Event {row.EventId} · {row.Provider}\n" +
-            $"{row.Channel} · {row.Computer} · Record {row.RecordId}\n\n{message}\n\n{row.Xml}";
+            $"{row.Channel} · {row.Computer} · Record {row.RecordId}\n\n{content.Message}\n\n{content.Xml}";
     }
 
     private void CopyProblem_Click(object sender, RoutedEventArgs e)
@@ -301,8 +304,8 @@ public partial class MainWindow : Window, IDisposable
 
     private void CopyXml_Click(object sender, RoutedEventArgs e)
     {
-        if (EventsGrid.SelectedItem is ProblemGroup group)
-            Clipboard.SetText(group.Events[^1].Xml);
+        if (!string.IsNullOrEmpty(_selectedXml))
+            Clipboard.SetText(_selectedXml);
     }
 
     protected override void OnClosed(EventArgs e)

@@ -31,7 +31,7 @@ internal static class WindowsEventReader
     private const int BatchSize = 256;
 
     internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken,
-        int maximumRows = 50_000, Action<IReadOnlyList<EventRow>>? firstBatch = null, bool filePath = false)
+        int maximumRows = 1_000_000, Action<IReadOnlyList<EventRow>>? firstBatch = null, bool filePath = false)
     {
         using var query = EvtQuery(IntPtr.Zero, channel, xpath, (filePath ? EvtQueryFilePath : EvtQueryChannelPath) | EvtQueryReverseDirection);
         if (query.IsInvalid)
@@ -40,7 +40,7 @@ internal static class WindowsEventReader
         var rows = new List<EventRow>();
         var handles = new IntPtr[BatchSize];
 
-        // ponytail: v0.1 caps one channel at 50k rows; replace with paging after profiling real large logs.
+        // ponytail: one million matches the documented UI ceiling; add disk-backed paging only beyond it.
         while (rows.Count < maximumRows)
         {
             var batchStart = rows.Count;
@@ -93,6 +93,22 @@ internal static class WindowsEventReader
     }
 
     internal static MessageFormatter CreateMessageFormatter() => new();
+
+    internal static string ReadXml(EventRow row)
+    {
+        var xpath = $"*[System[EventRecordID={row.RecordId}]]";
+        using var query = EvtQuery(IntPtr.Zero, row.LogFilePath ?? row.Channel, xpath,
+            row.LogFilePath is null ? EvtQueryChannelPath : EvtQueryFilePath);
+        if (query.IsInvalid)
+            return row.Xml;
+
+        var events = new IntPtr[1];
+        if (!EvtNext(query, 1, events, 0, 0, out var returned) || returned == 0)
+            return row.Xml;
+
+        using var handle = new EventHandle(events[0]);
+        return RenderXml(handle);
+    }
 
     internal sealed class MessageFormatter : IDisposable
     {
@@ -187,7 +203,7 @@ internal static class WindowsEventReader
             (long?)system.Element(ns + "EventRecordID") ?? 0,
             (string?)system.Element(ns + "Computer") ?? "",
             details,
-            xml,
+            "",
             logFilePath);
     }
 

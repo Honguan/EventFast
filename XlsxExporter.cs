@@ -13,7 +13,7 @@ internal static class XlsxExporter
     private const string Relationships = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
     internal static void Export(string path, IReadOnlyList<ProblemGroup> groups, IEnumerable<EventRow> events,
-        bool includeXml = false, Func<EventRow, string>? messageFactory = null)
+        bool includeXml = false, Func<EventRow, string>? messageFactory = null, Func<EventRow, string>? xmlFactory = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
@@ -34,7 +34,7 @@ internal static class XlsxExporter
                         ? ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message", "XML"]
                         : ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message"],
                     events.Select(row => includeXml
-                        ? new object?[] { row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row), row.Xml }
+                        ? new object?[] { row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row), (xmlFactory ?? DefaultXml)(row) }
                         : [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row)]));
             }
             File.Move(temporaryPath, path, true);
@@ -46,6 +46,7 @@ internal static class XlsxExporter
     }
 
     private static string DefaultMessage(EventRow row) => row.Details;
+    private static string DefaultXml(EventRow row) => row.Xml;
 
     private static void WriteSheet(ZipArchive archive, string name, string[] headers, IEnumerable<object?[]> rows)
     {
