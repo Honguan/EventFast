@@ -22,11 +22,12 @@ public partial class MainWindow : Window
 
     private async Task RunQueryAsync(QuickQuery? quick)
     {
-        var channels = new[]
+        var selectedChannels = new[]
         {
             SystemBox.IsChecked == true ? "System" : null,
             ApplicationBox.IsChecked == true ? "Application" : null
         }.OfType<string>().ToArray();
+        var channels = quick?.Channels is { Length: > 0 } ? quick.Channels : selectedChannels;
 
         if (channels.Length == 0)
         {
@@ -49,9 +50,33 @@ public partial class MainWindow : Window
                 ? EventQuery.Parse(SearchBox.Text, maximumLevel, period)
                 : EventQuery.FromQuick(quick, maximumLevel, period);
             var xpath = EventQuery.BuildXPath(criteria);
+            var previewRows = new List<EventRow>();
+            void ShowFirstBatch(IReadOnlyList<EventRow> batch)
+            {
+                var filtered = batch.Where(row => EventQuery.Matches(row, criteria)).ToArray();
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (token.IsCancellationRequested)
+                        return;
+                    previewRows.AddRange(filtered);
+                    EventsGrid.ItemsSource = ProblemGrouping.Group(previewRows);
+                    StatusText.Text = $"已顯示第一批 {previewRows.Count:N0} 筆 · 背景查詢中…";
+                });
+            }
             var tasks = channels.Select(channel => Task.Run(() =>
-                _cache.GetOrAdd($"{channel}\n{xpath}", () => WindowsEventReader.Read(channel, xpath, token)), token));
-            var rows = (await Task.WhenAll(tasks)).SelectMany(result => result)
+            {
+                try
+                {
+                    return (Rows: _cache.GetOrAdd($"{channel}\n{xpath}",
+                        () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch)), Error: (string?)null);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    return (Rows: (IReadOnlyList<EventRow>)[], Error: exception.Message);
+                }
+            }, token));
+            var results = await Task.WhenAll(tasks);
+            var rows = results.SelectMany(result => result.Rows)
                 .Where(row => EventQuery.Matches(row, criteria)).ToArray();
             token.ThrowIfCancellationRequested();
             var groups = ProblemGrouping.Group(rows);
@@ -59,7 +84,9 @@ public partial class MainWindow : Window
             _groups = groups;
             EventsGrid.ItemsSource = groups;
             ExportButton.IsEnabled = groups.Count > 0;
-            StatusText.Text = $"掃描 {rows.Length:N0} 筆 · 合併後 {groups.Count:N0} 類問題";
+            var errors = results.Count(result => result.Error is not null);
+            var levels = $"嚴重 {rows.Count(row => row.Level == "嚴重"):N0} · 錯誤 {rows.Count(row => row.Level == "錯誤"):N0} · 警告 {rows.Count(row => row.Level == "警告"):N0}";
+            StatusText.Text = $"符合 {rows.Length:N0} 筆 · {levels} · 合併 {groups.Count:N0} 類" + (errors > 0 ? $" · 略過 {errors} 個 Channel" : "");
         }
         catch (OperationCanceledException)
         {

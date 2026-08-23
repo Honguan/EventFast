@@ -29,7 +29,8 @@ internal static class WindowsEventReader
     private const int EvtFormatMessageEvent = 1;
     private const int BatchSize = 256;
 
-    internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken, int maximumRows = 50_000)
+    internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken,
+        int maximumRows = 50_000, Action<IReadOnlyList<EventRow>>? firstBatch = null)
     {
         using var query = EvtQuery(IntPtr.Zero, channel, xpath, EvtQueryChannelPath | EvtQueryReverseDirection);
         if (query.IsInvalid)
@@ -41,6 +42,7 @@ internal static class WindowsEventReader
         // ponytail: v0.1 caps one channel at 50k rows; replace with paging after profiling real large logs.
         while (rows.Count < maximumRows)
         {
+            var batchStart = rows.Count;
             cancellationToken.ThrowIfCancellationRequested();
             if (!EvtNext(query, handles.Length, handles, 0, 0, out var returned))
             {
@@ -71,6 +73,12 @@ internal static class WindowsEventReader
                         handles[index] = IntPtr.Zero;
                     }
                 }
+            }
+
+            if (firstBatch is not null)
+            {
+                firstBatch(rows.Skip(batchStart).ToArray());
+                firstBatch = null;
             }
         }
 

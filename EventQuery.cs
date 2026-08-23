@@ -8,24 +8,24 @@ internal sealed record QueryCriteria(
     IReadOnlyList<string>? Providers = null,
     IReadOnlyList<int>? EventIds = null);
 
-internal sealed record QuickQuery(string Name, string[] Providers, int[] EventIds);
+internal sealed record QuickQuery(string Name, string[] Providers, int[] EventIds, string[]? Channels = null);
 
 internal static class EventQuery
 {
     internal static readonly IReadOnlyDictionary<string, QuickQuery> QuickQueries = new Dictionary<string, QuickQuery>
     {
         ["all"] = new("全部問題", [], []),
-        ["system"] = new("系統錯誤", ["Microsoft-Windows-Kernel-General", "Service Control Manager"], []),
-        ["crash"] = new("程式崩潰", ["Application Error", ".NET Runtime", "Windows Error Reporting"], [1000, 1001, 1026]),
-        ["disk"] = new("磁碟 / SSD / NVMe", ["disk", "storahci", "stornvme", "storport", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 129, 153, 157]),
-        ["ntfs"] = new("NTFS / 檔案系統", ["Ntfs", "Microsoft-Windows-Ntfs"], [55, 98, 140]),
-        ["usb"] = new("USB / USB-C", ["Microsoft-Windows-DriverFrameworks-UserMode", "Microsoft-Windows-USB-USBHUB3", "UcmUcsiCx"], [10110, 10111]),
-        ["device"] = new("裝置", ["Microsoft-Windows-Kernel-PnP", "Kernel-PnP"], [219, 225, 411]),
-        ["driver"] = new("驅動程式", ["Microsoft-Windows-Kernel-PnP", "Service Control Manager"], [219, 7000, 7001, 7026]),
-        ["whea"] = new("硬體 / WHEA", ["Microsoft-Windows-WHEA-Logger", "WHEA-Logger"], [1, 17, 18, 19, 20, 46, 47]),
-        ["network"] = new("網路", ["Tcpip", "Microsoft-Windows-DNS-Client", "Microsoft-Windows-NetworkProfile"], [4201, 1014, 10000, 10001]),
-        ["update"] = new("Windows Update", ["Microsoft-Windows-WindowsUpdateClient"], [19, 20, 25, 31, 34]),
-        ["power"] = new("電源 / 異常關機", ["Microsoft-Windows-Kernel-Power", "EventLog"], [41, 6008])
+        ["system"] = new("系統錯誤", [], [], ["System"]),
+        ["crash"] = new("程式崩潰", ["Application Error", ".NET Runtime", "Windows Error Reporting"], [1000, 1001, 1026], ["Application"]),
+        ["disk"] = new("磁碟 / SSD / NVMe", ["disk", "storahci", "stornvme", "storport", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 129, 153, 157], ["System"]),
+        ["ntfs"] = new("NTFS / 檔案系統", ["Ntfs", "Microsoft-Windows-Ntfs"], [55, 98, 140], ["System"]),
+        ["usb"] = new("USB / USB-C", ["Microsoft-Windows-DriverFrameworks-UserMode", "Microsoft-Windows-USB-USBHUB3", "UcmUcsiCx"], [10110, 10111], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
+        ["device"] = new("裝置", ["Microsoft-Windows-Kernel-PnP", "Kernel-PnP"], [219, 225, 411], ["System", "Microsoft-Windows-Kernel-PnP/Configuration"]),
+        ["driver"] = new("驅動程式", ["Microsoft-Windows-Kernel-PnP", "Service Control Manager"], [219, 7000, 7001, 7026], ["System"]),
+        ["whea"] = new("硬體 / WHEA", ["Microsoft-Windows-WHEA-Logger", "WHEA-Logger"], [1, 17, 18, 19, 20, 46, 47], ["System"]),
+        ["network"] = new("網路", ["Tcpip", "Microsoft-Windows-DNS-Client", "Microsoft-Windows-NetworkProfile"], [4201, 1014, 10000, 10001], ["System", "Microsoft-Windows-WLAN-AutoConfig/Operational"]),
+        ["update"] = new("Windows Update", ["Microsoft-Windows-WindowsUpdateClient"], [19, 20, 25, 31, 34], ["System", "Microsoft-Windows-WindowsUpdateClient/Operational"]),
+        ["power"] = new("電源 / 異常關機", ["Microsoft-Windows-Kernel-Power", "EventLog"], [41, 6008], ["System"])
     };
 
     internal static QueryCriteria Parse(string search, int maximumLevel, TimeSpan period)

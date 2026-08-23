@@ -8,6 +8,8 @@ dotnet run -- --self-test
 dotnet publish -p:PublishProfile=win-x64
 ```
 
+需要 .NET 10 SDK；正式發布產物為 Windows x64 self-contained single-file。
+
 目前支援：
 
 - System／Application 原生平行批次查詢
