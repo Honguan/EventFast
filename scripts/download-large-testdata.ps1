@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $output = [IO.Path]::GetFullPath((Join-Path $workspace $OutputPath))
 $expected = "b3f8498d8a99740f7381518fd332cbb67c0bfed0a5b4320d407e485b3ee682fb"
-$url = "https://raw.githubusercontent.com/Yamato-Security/hayabusa-evtx/main/samples/security_big_sample.evtx"
+$url = "https://raw.githubusercontent.com/JPCERTCC/LogonTracer/b2c2fc6875a29cdc7c202f574b6693a07993ee92/sample/Security.evtx"
 
 if (-not $output.StartsWith($workspace + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Output path must be inside the repository: $output"
