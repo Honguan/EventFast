@@ -26,6 +26,7 @@ internal static class WindowsEventReader
     private const int EvtQueryChannelPath = 0x1;
     private const int EvtQueryReverseDirection = 0x200;
     private const int EvtRenderEventXml = 1;
+    private const int EvtFormatMessageEvent = 1;
     private const int BatchSize = 256;
 
     internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken, int maximumRows = 50_000)
@@ -74,6 +75,32 @@ internal static class WindowsEventReader
         }
 
         return rows;
+    }
+
+    internal static string ReadMessage(EventRow row)
+    {
+        var xpath = $"*[System[EventRecordID={row.RecordId}]]";
+        using var query = EvtQuery(IntPtr.Zero, row.Channel, xpath, EvtQueryChannelPath);
+        if (query.IsInvalid)
+            return row.Details;
+
+        var events = new IntPtr[1];
+        if (!EvtNext(query, 1, events, 0, 0, out var returned) || returned == 0)
+            return row.Details;
+
+        using var handle = new EventHandle(events[0]);
+        using var metadata = EvtOpenPublisherMetadata(IntPtr.Zero, row.Provider, null, 0, 0);
+        if (metadata.IsInvalid)
+            return row.Details;
+
+        EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, 0, null, out var size);
+        if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer || size == 0)
+            return row.Details;
+
+        var buffer = new StringBuilder(size);
+        return EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, size, buffer, out _)
+            ? buffer.ToString()
+            : row.Details;
     }
 
     private static string RenderXml(EventHandle handle)
@@ -132,6 +159,9 @@ internal static class WindowsEventReader
     [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern EventHandle EvtQuery(IntPtr session, string path, string query, int flags);
 
+    [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern EventHandle EvtOpenPublisherMetadata(IntPtr session, string publisherId, string? logFilePath, int locale, int flags);
+
     [DllImport("wevtapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EvtNext(EventHandle resultSet, int eventArraySize, [Out] IntPtr[] events, int timeout, int flags, out int returned);
@@ -139,6 +169,11 @@ internal static class WindowsEventReader
     [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EvtRender(IntPtr context, EventHandle fragment, int flags, int bufferSize, StringBuilder? buffer, out int bufferUsed, out int propertyCount);
+
+    [DllImport("wevtapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EvtFormatMessage(EventHandle publisherMetadata, EventHandle eventHandle, int messageId, int valueCount,
+        IntPtr values, int flags, int bufferSize, StringBuilder? buffer, out int bufferUsed);
 
     [DllImport("wevtapi.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -11,7 +11,13 @@ public partial class App : Application
         if (e.Args.Contains("--self-test"))
         {
             EventQuery.SelfTest();
-            WindowsEventReader.Read("System", EventQuery.BuildXPath(new(0, null, null)), CancellationToken.None, 1);
+            ProblemGrouping.SelfTest();
+            XlsxExporter.SelfTest();
+            EventCache.SelfTest();
+            var rows = WindowsEventReader.Read("System", EventQuery.BuildXPath(new(0, TimeSpan.FromHours(24), null, null)), CancellationToken.None, 1);
+            if (rows.Count > 0)
+                WindowsEventReader.ReadMessage(rows[0]);
+            WindowsEventReader.Read("System", EventQuery.BuildXPath(EventQuery.FromQuick(EventQuery.QuickQueries["power"], 3, TimeSpan.FromDays(7))), CancellationToken.None, 1);
             Shutdown();
             return;
         }
