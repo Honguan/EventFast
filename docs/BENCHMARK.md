@@ -7,20 +7,22 @@
 
 | Case | Events | First batch | Total | CPU | Peak RAM | Events/s |
 |---|---:|---:|---:|---:|---:|---:|
-| 24h Warning+ | 20 | 132.4 ms | 132.7 ms | 125.0 ms | 33.6 MB | 151 |
-| 30d Event 51 | 385 | 10.4 ms | 25.5 ms | 15.6 ms | 40.9 MB | 15,126 |
-| 30d Event 153 | 416 | 10.5 ms | 22.8 ms | 0.0 ms* | 47.9 MB | 18,206 |
+| 24h Warning+ | 20 | 130.2 ms | 130.4 ms | 125.0 ms | 38.0 MB | 153 |
+| 30d Event 51 | 385 | 9.7 ms | 23.6 ms | 15.6 ms | 45.1 MB | 16,329 |
+| 30d Event 153 | 416 | 10.6 ms | 23.4 ms | 31.2 ms | 52.2 MB | 17,783 |
+| Application 30d Event 1000 | 9,690 | 13.1 ms | 499.7 ms | 468.8 ms | 61.8 MB | 19,391 |
+| 30d Disk/NTFS Provider + ID | 2,019 | 11.9 ms | 93.1 ms | 93.8 ms | 66.5 MB | 21,676 |
 
-\* `Process.TotalProcessorTime` 的單次取樣解析度不足；不可解讀為沒有使用 CPU。
+完整 Message 關鍵字 `disk`：88.3 ms；相同 24 小時查詢 cold／warm cache：14.1 ms／0.083 ms。
 
 ## 合成大型資料
 
-| Events | Group | Groups | XLSX export | XLSX | Managed RAM |
-|---:|---:|---:|---:|---:|---:|
-| 10,000 | 27.5 ms | 50 | 100.5 ms | 0.7 MB | 11.7 MB |
-| 100,000 | 132.5 ms | 50 | 857.4 ms | 7.1 MB | 30.2 MB |
-| 500,000 | 571.3 ms | 50 | 1,341.5 ms | 35.5 MB | 148.8 MB |
-| 1,000,000 | 482.4 ms | 50 | 2,679.6 ms | 71.3 MB | 387.2 MB |
+| Events | Group | Groups | XLSX export | Export/s | XLSX | Managed RAM |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10,000 | 27.5 ms | 50 | 101.0 ms | 98,989 | 0.7 MB | 11.4 MB |
+| 100,000 | 130.7 ms | 50 | 994.2 ms | 100,587 | 7.1 MB | 40.5 MB |
+| 500,000 | 478.6 ms | 50 | 1,433.0 ms | 348,918 | 35.7 MB | 142.3 MB |
+| 1,000,000 | 503.7 ms | 50 | 2,837.5 ms | 352,421 | 71.2 MB | 384.4 MB |
 
 執行：
 
