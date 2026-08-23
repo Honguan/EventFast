@@ -1,6 +1,10 @@
 using System.IO.Compression;
+using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
 using EventFast;
 
 var tests = new (string Name, Action Run)[]
@@ -98,6 +102,9 @@ if (args.Contains("--excel"))
 
 if (args.Contains("--leak"))
     TestNativeLeaks();
+
+if (args.Contains("--ui"))
+    TestUiQueryCompletion();
 
 var largeEvtxIndex = Array.IndexOf(args, "--large-evtx");
 if (largeEvtxIndex >= 0 && largeEvtxIndex + 1 < args.Length)
@@ -251,6 +258,61 @@ static void TestNativeLeaks()
     var memoryGrowth = process.PrivateMemorySize64 - memory;
     Assert(handleGrowth <= 10 && memoryGrowth < 32L * 1024 * 1024);
     Console.WriteLine($"PASS Native leak loop (500 runs, handles {handleGrowth:+#;-#;0}, private memory {memoryGrowth / 1048576d:+0.0;-0.0;0.0} MB)");
+}
+
+static void TestUiQueryCompletion()
+{
+    Exception? failure = null;
+    using var finished = new ManualResetEventSlim();
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            var app = new Application();
+            var window = new MainWindow();
+            window.Show();
+            window.Hide();
+            var stopwatch = Stopwatch.StartNew();
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+            timer.Tick += (_, _) =>
+            {
+                var status = ((TextBlock)window.FindName("StatusText")).Text;
+                var searchEnabled = ((Button)window.FindName("SearchButton")).IsEnabled;
+                if (searchEnabled && !status.Contains("查詢中", StringComparison.Ordinal))
+                {
+                    timer.Stop();
+                    window.Close();
+                    app.Shutdown();
+                    Console.WriteLine($"PASS UI query completion ({stopwatch.Elapsed.TotalMilliseconds:F0} ms, {status})");
+                }
+                else if (stopwatch.Elapsed > TimeSpan.FromSeconds(5))
+                {
+                    failure = new TimeoutException($"UI query did not complete: {status}");
+                    timer.Stop();
+                    window.Close();
+                    app.Shutdown();
+                }
+            };
+            timer.Start();
+            window.Dispatcher.BeginInvoke(() =>
+                ((Button)window.FindName("SearchButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            app.Run();
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            finished.Set();
+        }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    if (!finished.Wait(TimeSpan.FromSeconds(10)))
+        throw new TimeoutException("UI test thread did not stop.");
+    if (failure is not null)
+        throw failure;
 }
 
 static EventRow Row(int id, string provider, string details, DateTime? time = null, string level = "錯誤") =>

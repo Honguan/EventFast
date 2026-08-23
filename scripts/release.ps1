@@ -29,7 +29,7 @@ try {
     }
 
     Invoke-DotNet -Arguments @("build", "-c", "Release", "-warnaserror")
-    Invoke-DotNet -Arguments @("run", "--project", "tests/EventFast.Tests", "-c", "Release", "--", "--integration", "--excel", "--leak")
+    Invoke-DotNet -Arguments @("run", "--project", "tests/EventFast.Tests", "-c", "Release", "--", "--integration", "--excel", "--leak", "--ui")
 
     New-Item -ItemType Directory -Path $output | Out-Null
     $benchmark = Join-Path $output "benchmark.txt"
