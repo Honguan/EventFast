@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 
 namespace EventFast;
@@ -22,6 +23,7 @@ public partial class App : Application
             return;
         }
 
-        new MainWindow().Show();
+        var eventFile = e.Args.FirstOrDefault(argument => File.Exists(argument) && Path.GetExtension(argument).Equals(".evtx", StringComparison.OrdinalIgnoreCase));
+        new MainWindow(eventFile).Show();
     }
 }

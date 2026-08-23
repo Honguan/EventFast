@@ -16,7 +16,8 @@ internal sealed record EventRow(
     long RecordId,
     string Computer,
     string Details,
-    string Xml);
+    string Xml,
+    string? LogFilePath = null);
 
 internal static class WindowsEventReader
 {
@@ -24,15 +25,16 @@ internal static class WindowsEventReader
     private const int ErrorNoMoreItems = 259;
     private const int ErrorTimeout = 1460;
     private const int EvtQueryChannelPath = 0x1;
+    private const int EvtQueryFilePath = 0x2;
     private const int EvtQueryReverseDirection = 0x200;
     private const int EvtRenderEventXml = 1;
     private const int EvtFormatMessageEvent = 1;
     private const int BatchSize = 256;
 
     internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken,
-        int maximumRows = 50_000, Action<IReadOnlyList<EventRow>>? firstBatch = null)
+        int maximumRows = 50_000, Action<IReadOnlyList<EventRow>>? firstBatch = null, bool filePath = false)
     {
-        using var query = EvtQuery(IntPtr.Zero, channel, xpath, EvtQueryChannelPath | EvtQueryReverseDirection);
+        using var query = EvtQuery(IntPtr.Zero, channel, xpath, (filePath ? EvtQueryFilePath : EvtQueryChannelPath) | EvtQueryReverseDirection);
         if (query.IsInvalid)
             throw NativeError(channel);
 
@@ -58,7 +60,7 @@ internal static class WindowsEventReader
                 {
                     using var handle = new EventHandle(handles[index]);
                     handles[index] = IntPtr.Zero;
-                    rows.Add(Parse(RenderXml(handle)));
+                    rows.Add(Parse(RenderXml(handle), filePath ? channel : null));
                     if (rows.Count >= maximumRows)
                         break;
                 }
@@ -87,28 +89,57 @@ internal static class WindowsEventReader
 
     internal static string ReadMessage(EventRow row)
     {
-        var xpath = $"*[System[EventRecordID={row.RecordId}]]";
-        using var query = EvtQuery(IntPtr.Zero, row.Channel, xpath, EvtQueryChannelPath);
-        if (query.IsInvalid)
-            return row.Details;
+        using var formatter = new MessageFormatter();
+        return formatter.Format(row);
+    }
 
-        var events = new IntPtr[1];
-        if (!EvtNext(query, 1, events, 0, 0, out var returned) || returned == 0)
-            return row.Details;
+    internal static MessageFormatter CreateMessageFormatter() => new();
 
-        using var handle = new EventHandle(events[0]);
-        using var metadata = EvtOpenPublisherMetadata(IntPtr.Zero, row.Provider, null, 0, 0);
-        if (metadata.IsInvalid)
-            return row.Details;
+    internal sealed class MessageFormatter : IDisposable
+    {
+        private readonly Dictionary<(string Provider, string? File), EventHandle> _metadata = [];
 
-        EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, 0, null, out var size);
-        if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer || size == 0)
-            return row.Details;
+        internal string Format(EventRow row)
+        {
+            var xpath = $"*[System[EventRecordID={row.RecordId}]]";
+            using var query = EvtQuery(IntPtr.Zero, row.LogFilePath ?? row.Channel, xpath, row.LogFilePath is null ? EvtQueryChannelPath : EvtQueryFilePath);
+            if (query.IsInvalid)
+                return row.Details;
 
-        var buffer = new StringBuilder(size);
-        return EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, size, buffer, out _)
-            ? buffer.ToString()
-            : row.Details;
+            var events = new IntPtr[1];
+            if (!EvtNext(query, 1, events, 0, 0, out var returned) || returned == 0)
+                return row.Details;
+
+            using var handle = new EventHandle(events[0]);
+            var key = (row.Provider, row.LogFilePath);
+            if (!_metadata.TryGetValue(key, out var metadata))
+            {
+                metadata = EvtOpenPublisherMetadata(IntPtr.Zero, row.Provider, row.LogFilePath, 0, 0);
+                if (!metadata.IsInvalid)
+                    _metadata.Add(key, metadata);
+            }
+            if (metadata.IsInvalid)
+            {
+                metadata.Dispose();
+                return row.Details;
+            }
+
+            EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, 0, null, out var size);
+            if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer || size == 0)
+                return row.Details;
+
+            var buffer = new StringBuilder(size);
+            return EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, size, buffer, out _)
+                ? buffer.ToString()
+                : row.Details;
+        }
+
+        public void Dispose()
+        {
+            foreach (var handle in _metadata.Values)
+                handle.Dispose();
+            _metadata.Clear();
+        }
     }
 
     private static string RenderXml(EventHandle handle)
@@ -124,7 +155,7 @@ internal static class WindowsEventReader
         return buffer.ToString();
     }
 
-    private static EventRow Parse(string xml)
+    private static EventRow Parse(string xml, string? logFilePath)
     {
         var root = XDocument.Parse(xml).Root ?? throw new InvalidDataException("事件 XML 為空。 ");
         XNamespace ns = root.Name.Namespace;
@@ -143,7 +174,8 @@ internal static class WindowsEventReader
             (long?)system.Element(ns + "EventRecordID") ?? 0,
             (string?)system.Element(ns + "Computer") ?? "",
             details,
-            xml);
+            xml,
+            logFilePath);
     }
 
     private static Exception NativeError(string target, int? code = null)

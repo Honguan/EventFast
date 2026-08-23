@@ -1,6 +1,6 @@
 # EventFast Benchmark
 
-測試日期：2026-08-23  
+測試日期：2026-08-23
 環境：Windows 11、Intel Core i7-13700HX（24 logical processors）、31.7 GB RAM、.NET SDK 10.0.400、Release x64。
 
 ## 真實 System Event Log

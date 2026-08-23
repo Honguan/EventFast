@@ -34,8 +34,53 @@ if (args.Contains("--integration"))
         Console.WriteLine($"PASS Native {channel} ({rows.Count} sampled)");
     }
 
+    WindowsEventReader.Read("System", EventQuery.BuildXPath(new(3, TimeSpan.Zero, null, null,
+        From: DateTime.Today.AddDays(-7), To: DateTime.Now)), CancellationToken.None, 1);
+    Console.WriteLine("PASS Native custom time range");
+
+    var messageRows = WindowsEventReader.Read("System", EventQuery.BuildXPath(new(0, TimeSpan.FromDays(7), null, null)), CancellationToken.None, 10);
+    using (var formatter = WindowsEventReader.CreateMessageFormatter())
+        foreach (var row in messageRows)
+            formatter.Format(row);
+    Console.WriteLine($"PASS Cached publisher message formatting ({messageRows.Count} sampled)");
+
     AssertThrows<InvalidOperationException>(() => WindowsEventReader.Read("EventFast-Missing-Channel", "*", CancellationToken.None));
     Console.WriteLine("PASS Missing channel error mapping");
+
+    var systemFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs", "System.evtx");
+    try
+    {
+        WindowsEventReader.Read(systemFile, "*", CancellationToken.None, 1, filePath: true);
+        Console.WriteLine("PASS Direct EVTX access");
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        Assert(exception.Message.Contains("權限不足"));
+        Console.WriteLine("PASS Non-admin EVTX permission mapping");
+    }
+
+    var exportedFile = Path.Combine(Path.GetTempPath(), $"EventFast-Export-{Guid.NewGuid():N}.evtx");
+    try
+    {
+        var startInfo = new ProcessStartInfo("wevtutil.exe") { UseShellExecute = false };
+        startInfo.ArgumentList.Add("epl");
+        startInfo.ArgumentList.Add("System");
+        startInfo.ArgumentList.Add(exportedFile);
+        startInfo.ArgumentList.Add("/ow:true");
+        using var export = Process.Start(startInfo) ?? throw new InvalidOperationException("Cannot start wevtutil.");
+        export.WaitForExit();
+        Assert(export.ExitCode == 0);
+        var offline = WindowsEventReader.Read(exportedFile, "*", CancellationToken.None, 1, filePath: true);
+        Assert(offline.Count == 0 || offline[0].LogFilePath == exportedFile);
+        if (offline.Count > 0)
+            WindowsEventReader.ReadMessage(offline[0]);
+        Console.WriteLine($"PASS Offline EVTX ({offline.Count} sampled)");
+    }
+    finally { File.Delete(exportedFile); }
+
+    WithEvtxFile([], path => AssertFails(() => WindowsEventReader.Read(path, "*", CancellationToken.None, filePath: true)));
+    WithEvtxFile([1, 2, 3, 4], path => AssertFails(() => WindowsEventReader.Read(path, "*", CancellationToken.None, filePath: true)));
+    Console.WriteLine("PASS Empty/corrupt EVTX errors");
 }
 
 if (args.Contains("--excel"))
@@ -56,6 +101,8 @@ static void TestXPath()
 {
     var xpath = EventQuery.BuildXPath(new(2, TimeSpan.FromHours(3), 51, null));
     Assert(xpath.Contains("10800000") && xpath.Contains("Level > 0 and Level <= 2") && xpath.Contains("EventID=51"));
+    var custom = EventQuery.BuildXPath(new(3, TimeSpan.Zero, null, null, From: DateTime.Today.AddDays(-7), To: DateTime.Now));
+    Assert(custom.Contains("@SystemTime >=") && custom.Contains("@SystemTime <="));
 }
 
 static void TestFilters()
@@ -189,6 +236,17 @@ static void WithPath(Action<string> action)
     finally { File.Delete(path); }
 }
 
+static void WithEvtxFile(byte[] content, Action<string> action)
+{
+    var path = Path.Combine(Path.GetTempPath(), $"EventFast-Test-{Guid.NewGuid():N}.evtx");
+    try
+    {
+        File.WriteAllBytes(path, content);
+        action(path);
+    }
+    finally { File.Delete(path); }
+}
+
 static void Assert(bool condition)
 {
     if (!condition) throw new InvalidOperationException("Assertion failed.");
@@ -199,4 +257,11 @@ static void AssertThrows<T>(Action action) where T : Exception
     try { action(); }
     catch (T) { return; }
     throw new InvalidOperationException($"Expected {typeof(T).Name}.");
+}
+
+static void AssertFails(Action action)
+{
+    try { action(); }
+    catch { return; }
+    throw new InvalidOperationException("Expected operation to fail.");
 }

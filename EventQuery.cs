@@ -6,7 +6,9 @@ internal sealed record QueryCriteria(
     int? EventId,
     string? Keyword,
     IReadOnlyList<string>? Providers = null,
-    IReadOnlyList<int>? EventIds = null);
+    IReadOnlyList<int>? EventIds = null,
+    DateTime? From = null,
+    DateTime? To = null);
 
 internal sealed record QuickQuery(string Name, string[] Providers, int[] EventIds, string[]? Channels = null);
 
@@ -42,10 +44,10 @@ internal static class EventQuery
 
     internal static string BuildXPath(QueryCriteria criteria)
     {
-        var conditions = new List<string>
-        {
-            $"TimeCreated[timediff(@SystemTime) <= {(long)criteria.Period.TotalMilliseconds}]"
-        };
+        var time = criteria.From is { } from && criteria.To is { } to
+            ? $"TimeCreated[@SystemTime >= '{Utc(from)}' and @SystemTime <= '{Utc(to)}']"
+            : $"TimeCreated[timediff(@SystemTime) <= {(long)criteria.Period.TotalMilliseconds}]";
+        var conditions = new List<string> { time };
 
         if (criteria.MaximumLevel > 0)
             conditions.Add($"Level > 0 and Level <= {criteria.MaximumLevel}");
@@ -83,6 +85,8 @@ internal static class EventQuery
         throw new ArgumentException("Provider 不可同時包含單引號與雙引號。", nameof(value));
     }
 
+    private static string Utc(DateTime value) => value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
     internal static void SelfTest()
     {
         var mixed = Parse("disk 153", 3, TimeSpan.FromHours(24));
@@ -93,5 +97,9 @@ internal static class EventQuery
         var quick = FromQuick(QuickQueries["power"], 2, TimeSpan.FromHours(1));
         if (!BuildXPath(quick).Contains("EventID=41") || !Matches(new(DateTime.Now, "錯誤", 41, "x", "System", 1, "", "", ""), quick))
             throw new InvalidOperationException("Quick query self-test failed.");
+
+        var custom = mixed with { From = new DateTime(2026, 1, 1), To = new DateTime(2026, 1, 2) };
+        if (!BuildXPath(custom).Contains($"@SystemTime >= '{Utc(custom.From!.Value)}'"))
+            throw new InvalidOperationException("Custom time query self-test failed.");
     }
 }
