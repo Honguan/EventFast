@@ -3,7 +3,7 @@
 測試日期：2026-08-23
 環境：Windows 11、Intel Core i7-13700HX（24 logical processors）、31.7 GB RAM、.NET SDK 10.0.400、Release x64。
 
-正式 self-contained single-file 三次全新 bundle extraction 冷啟動：865／785／742 ms，中位數 785 ms；三次執行中 TCP／UDP endpoint 均為 0，正常關閉後皆於 2 秒內完全退出。
+正式 self-contained single-file 三次全新 bundle extraction 冷啟動：726／640／671 ms，中位數 671 ms；三次執行中 TCP／UDP endpoint 均為 0，正常關閉後皆於 2 秒內完全退出。
 
 ## 真實 System Event Log
 
