@@ -3,6 +3,8 @@
 測試日期：2026-08-23
 環境：Windows 11、Intel Core i7-13700HX（24 logical processors）、31.7 GB RAM、.NET SDK 10.0.400、Release x64。
 
+正式 self-contained single-file 使用全新 bundle extraction 目錄冷啟動：897 ms。
+
 ## 真實 System Event Log
 
 | Case | Events | First batch | Total | CPU | Peak RAM | Events/s |
