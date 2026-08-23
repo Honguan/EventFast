@@ -110,7 +110,8 @@ public partial class MainWindow : Window, IDisposable
                 {
                     var key = $"{channel}\n{xpath}";
                     var rawRows = _cache.GetOrAdd(key,
-                        () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch, filePath: _eventFile is not null));
+                        () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch,
+                            filePath: _eventFile is not null, failIfTruncated: true));
                     var rows = criteria.Keyword is null ? rawRows : _cache.GetOrAdd($"{key}\nmessages", () => AddMessages(rawRows, token));
                     return (Rows: rows, Error: (string?)null, RequiresAdmin: false);
                 }

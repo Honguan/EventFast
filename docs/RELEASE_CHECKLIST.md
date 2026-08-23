@@ -26,6 +26,7 @@ SHA256：`25a7366989171ac5cd99e03d320174ca8c71942b44ac4b95c8734a4fc6922810`
 - [x] 62,031 筆公開真實 EVTX 完整讀取（第一批 174.7 ms、46.6 MB managed memory）
 - [x] 非系統管理員讀取受保護 `.evtx` 權限映射測試
 - [ ] 100,000+ 事件的大型真實 `.evtx` 測試
+- [x] Native 查詢超過每 Channel 1,000,000 筆時明確提示，不靜默截斷
 - [x] XLSX 精確 `ERROR_DISK_FULL`（112）故障注入：保留原檔並清除暫存檔
 - [ ] 隔離磁碟實際空間耗盡時的 Excel 匯出測試
 - [x] 120 分鐘 native query/message soak（300,228 次、handle -3、private memory +17.2 MB）

@@ -31,7 +31,8 @@ internal static class WindowsEventReader
     private const int BatchSize = 256;
 
     internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken,
-        int maximumRows = 1_000_000, Action<IReadOnlyList<EventRow>>? firstBatch = null, bool filePath = false)
+        int maximumRows = 1_000_000, Action<IReadOnlyList<EventRow>>? firstBatch = null, bool filePath = false,
+        bool failIfTruncated = false)
     {
         using var query = EvtQuery(IntPtr.Zero, channel, xpath, (filePath ? EvtQueryFilePath : EvtQueryChannelPath) | EvtQueryReverseDirection);
         if (query.IsInvalid)
@@ -81,6 +82,24 @@ internal static class WindowsEventReader
                 firstBatch(rows.Skip(batchStart).ToArray());
                 firstBatch = null;
             }
+        }
+
+        if (failIfTruncated && rows.Count == maximumRows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (EvtNext(query, handles.Length, handles, 0, 0, out var returned))
+            {
+                for (var index = 0; index < returned; index++)
+                {
+                    EvtClose(handles[index]);
+                    handles[index] = IntPtr.Zero;
+                }
+                throw new InvalidOperationException($"查詢結果超過 {maximumRows:N0} 筆，請縮短時間或增加篩選條件。");
+            }
+
+            var error = Marshal.GetLastWin32Error();
+            if (error is not ErrorNoMoreItems and not ErrorTimeout)
+                throw NativeError(channel, error);
         }
 
         return rows;

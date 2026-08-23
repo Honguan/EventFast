@@ -48,6 +48,10 @@ if (args.Contains("--integration"))
         From: DateTime.Today.AddDays(-7), To: DateTime.Now)), CancellationToken.None, 1);
     Console.WriteLine("PASS Native custom time range");
 
+    AssertThrows<InvalidOperationException>(() =>
+        WindowsEventReader.Read("System", "*", CancellationToken.None, 1, failIfTruncated: true));
+    Console.WriteLine("PASS Native result-limit mapping");
+
     var messageRows = WindowsEventReader.Read("System", EventQuery.BuildXPath(new(0, TimeSpan.FromDays(7), null, null)), CancellationToken.None, 10);
     using (var formatter = WindowsEventReader.CreateMessageFormatter())
         foreach (var row in messageRows)
