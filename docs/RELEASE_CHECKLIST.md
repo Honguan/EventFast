@@ -2,9 +2,11 @@
 
 ## v1.0.0 Release gate
 
-候選：`artifacts/release-20260824-01/EventFast-v1.0.0-win-x64.exe`
+候選：`artifacts/release-20260824-02/EventFast-v1.0.0-win-x64.exe`
 
-SHA256：`e7a9bbd8376871d54dbcb585cfaf7996297d0a1051160b122d735ed67d9f30fc`
+SHA256：`0db2b1803ebc4a603f380cdec0569e4ad2591462af792cfd3b8d2ce11a501ca9`
+
+驗證紀錄：`artifacts/release-20260824-02/verification.txt`、`benchmark.txt`、`startup.txt`、`privacy.txt`、`lifecycle.txt`
 
 發布仍需專案擁有者明確授權。
 
@@ -14,7 +16,7 @@ SHA256：`e7a9bbd8376871d54dbcb585cfaf7996297d0a1051160b122d735ed67d9f30fc`
 - [x] 問題群組、排序、群組事件與完整 Details
 - [x] Excel 匯出、鎖檔、磁碟不足、取消與原檔保護
 - [x] 自動測試無重大失敗
-- [x] Native leak loop 無明顯 memory／handle leak
+- [x] Native leak loop：500 次，handle 0、private memory +4.2 MB
 - [x] 本機 Microsoft Excel 開啟兩張工作表
 - [x] 本機實際使用：雙 Channel 查詢、UI、Details、Excel 與錯誤路徑正常
 - [ ] 人工核准 GitHub Release
