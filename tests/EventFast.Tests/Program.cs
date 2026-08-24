@@ -16,6 +16,7 @@ var tests = new (string Name, Action Run)[]
     ("Grouping/classifier/sorting", TestGrouping),
     ("Problem summary", TestProblemSummary),
     ("Event details layout", TestEventDetailsLayout),
+    ("Problem search URL", TestProblemSearchUrl),
     ("Startup arguments", TestStartupArguments),
     ("Formatted message search", TestFormattedMessageSearch),
     ("XLSX export mapping", TestExport),
@@ -263,6 +264,14 @@ static void TestEventDetailsLayout()
     var details = MainWindow.FormatDetails(group, row, "發生已修正的硬體錯誤。", "<Event />");
     Assert(details.Contains("事件資訊") && details.Contains("時間：2026-08-24 22:45:57") &&
            details.Contains("Event ID：17") && details.Contains("事件訊息") && details.Contains("原始 XML"));
+}
+
+static void TestProblemSearchUrl()
+{
+    var row = Row(17, "A&B Provider", "payload");
+    var uri = MainWindow.BuildProblemSearchUri(ProblemGrouping.Group([row])[0]);
+    Assert(uri.Scheme == Uri.UriSchemeHttps && uri.Host == "www.google.com" && uri.Query.Contains("%26") &&
+           Uri.UnescapeDataString(uri.Query).Contains("Event ID 17 A&B Provider Windows 可能原因"));
 }
 
 static void TestCancelledExport()

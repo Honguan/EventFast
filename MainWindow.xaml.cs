@@ -388,6 +388,39 @@ public partial class MainWindow : Window, IDisposable
 
     private async void EventsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) => await LoadSelectedDetailsAsync();
 
+    private void EventsGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject source &&
+            ItemsControl.ContainerFromElement(EventsGrid, source) is DataGridRow row)
+            EventsGrid.SelectedItem = row.Item;
+        else
+            EventsGrid.SelectedItem = null;
+    }
+
+    private void EventsGrid_ContextMenuOpening(object sender, ContextMenuEventArgs e) =>
+        e.Handled = EventsGrid.SelectedItem is not ProblemGroup;
+
+    private void SearchProblemOnline_Click(object sender, RoutedEventArgs e)
+    {
+        if (EventsGrid.SelectedItem is not ProblemGroup group)
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(BuildProblemSearchUri(group).AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = $"無法開啟瀏覽器：{exception.Message}";
+        }
+    }
+
+    internal static Uri BuildProblemSearchUri(ProblemGroup group)
+    {
+        var query = $"{group.Problem} Event ID {group.EventId} {group.Provider} Windows 可能原因";
+        return new Uri($"https://www.google.com/search?q={Uri.EscapeDataString(query)}");
+    }
+
     private async void OccurrencesGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (OccurrencesGrid.SelectedItem is EventRow row)

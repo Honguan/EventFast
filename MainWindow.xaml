@@ -89,7 +89,14 @@
         <DataGrid x:Name="EventsGrid" Grid.Row="3" IsReadOnly="True" AutoGenerateColumns="False"
                   EnableRowVirtualization="True" EnableColumnVirtualization="True"
                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                  SelectionChanged="EventsGrid_SelectionChanged" MouseDoubleClick="EventsGrid_MouseDoubleClick">
+                  SelectionChanged="EventsGrid_SelectionChanged" MouseDoubleClick="EventsGrid_MouseDoubleClick"
+                  PreviewMouseRightButtonDown="EventsGrid_PreviewMouseRightButtonDown"
+                  ContextMenuOpening="EventsGrid_ContextMenuOpening">
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="使用搜尋引擎查詢可能原因" Click="SearchProblemOnline_Click" />
+                </ContextMenu>
+            </DataGrid.ContextMenu>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="等級" Binding="{Binding Severity}" Width="70" />
                 <DataGridTextColumn Header="問題" Binding="{Binding Problem}" Width="2*" />
