@@ -8,7 +8,9 @@ SHA256：`0db2b1803ebc4a603f380cdec0569e4ad2591462af792cfd3b8d2ce11a501ca9`
 
 驗證紀錄：`artifacts/release-20260824-02/verification.txt`、`benchmark.txt`、`startup.txt`、`privacy.txt`、`lifecycle.txt`
 
-發布仍需專案擁有者明確授權。
+遠端分支：`eventfast`（Release tag commit：`c6df0f16a824db0be73e3d61924d945169ba78cf`）
+
+正式 Release：<https://github.com/Honguan/codex-settings/releases/tag/eventfast-v1.0.0>
 
 - [x] Release build 成功，零警告
 - [x] win-x64 self-contained EXE 產生並可啟動
@@ -19,7 +21,7 @@ SHA256：`0db2b1803ebc4a603f380cdec0569e4ad2591462af792cfd3b8d2ce11a501ca9`
 - [x] Native leak loop：500 次，handle 0、private memory +4.2 MB
 - [x] 本機 Microsoft Excel 開啟兩張工作表
 - [x] 本機實際使用：雙 Channel 查詢、UI、Details、Excel 與錯誤路徑正常
-- [ ] 人工核准 GitHub Release
+- [x] GitHub Release 已核准並發布；EXE 遠端 digest 與本機 SHA256 一致
 
 ## 可選、非 Release Gate
 

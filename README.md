@@ -4,7 +4,7 @@ EventFast 是可攜式 Windows Event Log 查詢工具，直接讀取 Windows 原
 
 ## 下載與需求
 
-正式發布後可從 [GitHub Releases](https://github.com/Honguan/codex-settings/releases) 下載 `EventFast-v1.0.0-win-x64.exe`。支援 Windows 10／11 x64；單檔 self-contained，不需安裝 .NET Runtime 或 SDK，也不需安裝程序。
+從 [EventFast v1.0.0 Release](https://github.com/Honguan/codex-settings/releases/tag/eventfast-v1.0.0) 下載 `EventFast-v1.0.0-win-x64.exe`。支援 Windows 10／11 x64；單檔 self-contained，不需安裝 .NET Runtime 或 SDK，也不需安裝程序。
 
 ## 使用方式
 
