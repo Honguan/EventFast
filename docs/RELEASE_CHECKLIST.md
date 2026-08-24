@@ -8,9 +8,9 @@ SHA256：`0db2b1803ebc4a603f380cdec0569e4ad2591462af792cfd3b8d2ce11a501ca9`
 
 驗證紀錄：`artifacts/release-20260824-02/verification.txt`、`benchmark.txt`、`startup.txt`、`privacy.txt`、`lifecycle.txt`
 
-遠端分支：`eventfast`（Release tag commit：`c6df0f16a824db0be73e3d61924d945169ba78cf`）
+遠端 repository：`Honguan/EventFast`，分支：`main`
 
-正式 Release：<https://github.com/Honguan/codex-settings/releases/tag/eventfast-v1.0.0>
+正式 Release：<https://github.com/Honguan/EventFast/releases/tag/v1.0.0>
 
 - [x] Release build 成功，零警告
 - [x] win-x64 self-contained EXE 產生並可啟動
