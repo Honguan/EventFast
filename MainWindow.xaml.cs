@@ -136,11 +136,12 @@ public partial class MainWindow : Window, IDisposable
             ApplySort();
             ExportButton.IsEnabled = groups.Count > 0;
             var errors = results.Count(result => result.Error is not null);
+            var firstError = results.Select(result => result.Error).FirstOrDefault(error => error is not null);
             AdminButton.Visibility = results.Any(result => result.RequiresAdmin) ? Visibility.Visible : Visibility.Collapsed;
             StatusText.ToolTip = string.Join(Environment.NewLine, results.Select(result => result.Error).OfType<string>());
             var levels = $"嚴重 {rows.Count(row => row.Level == "嚴重"):N0} · 錯誤 {rows.Count(row => row.Level == "錯誤"):N0} · 警告 {rows.Count(row => row.Level == "警告"):N0}";
             StatusText.Text = $"掃描 {allRows.Length:N0} 筆 · 符合 {rows.Length:N0} 筆 · {levels} · 合併 {groups.Count:N0} 類" +
-                              (errors > 0 ? $" · 略過 {errors} 個 Channel" : "");
+                              (errors > 0 ? $" · 略過 {errors} 個 Channel：{firstError}" : "");
         }
         catch (OperationCanceledException)
         {
@@ -242,6 +243,11 @@ public partial class MainWindow : Window, IDisposable
             if (ReferenceEquals(_operationCancellation, operation))
                 StatusText.Text = "匯出已取消。";
         }
+        catch (IOException exception) when ((exception.HResult & 0xffff) == 112)
+        {
+            if (ReferenceEquals(_operationCancellation, operation))
+                StatusText.Text = "磁碟空間不足，Excel 匯出失敗。";
+        }
         catch (Exception exception)
         {
             if (ReferenceEquals(_operationCancellation, operation))
@@ -304,9 +310,21 @@ public partial class MainWindow : Window, IDisposable
             e.Handled = true;
             Export_Click(ExportButton, new RoutedEventArgs());
         }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.C && EventsGrid.SelectedItem is ProblemGroup group)
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.A && EventsGrid.IsKeyboardFocusWithin)
         {
-            Clipboard.SetText($"{group.Problem} · Event {group.EventId} · {group.Count:N0} 次 · {group.Provider}");
+            EventsGrid.SelectAll();
+            e.Handled = true;
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.A && OccurrencesGrid.IsKeyboardFocusWithin)
+        {
+            OccurrencesGrid.SelectAll();
+            e.Handled = true;
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.C &&
+                 EventsGrid.IsKeyboardFocusWithin && EventsGrid.SelectedItems.Count > 0)
+        {
+            Clipboard.SetText(string.Join($"{Environment.NewLine}{Environment.NewLine}",
+                EventsGrid.SelectedItems.OfType<ProblemGroup>().Select(FormatSummary)));
             e.Handled = true;
         }
         else if (e.Key == Key.Enter && OccurrencesGrid.IsKeyboardFocusWithin && OccurrencesGrid.SelectedItem is EventRow occurrence)
@@ -384,7 +402,17 @@ public partial class MainWindow : Window, IDisposable
         var row = selectedRow ?? group.Events[^1];
         DetailsTabs.SelectedIndex = 1;
         DetailsBox.Text = "正在載入完整事件訊息…";
-        var content = await Task.Run(() => (Message: WindowsEventReader.ReadMessage(row), Xml: WindowsEventReader.ReadXml(row)));
+        (string Message, string Xml) content;
+        try
+        {
+            content = await Task.Run(() => (WindowsEventReader.ReadMessage(row), WindowsEventReader.ReadXml(row)));
+        }
+        catch (Exception exception)
+        {
+            if (ReferenceEquals(EventsGrid.SelectedItem, group))
+                DetailsBox.Text = $"{FormatSummary(group)}{Environment.NewLine}{Environment.NewLine}無法載入完整事件：{exception.Message}";
+            return;
+        }
         if (!ReferenceEquals(EventsGrid.SelectedItem, group))
             return;
         _selectedXml = content.Xml;
@@ -423,8 +451,16 @@ public partial class MainWindow : Window, IDisposable
     private void CopyProblem_Click(object sender, RoutedEventArgs e)
     {
         if (EventsGrid.SelectedItem is ProblemGroup group)
-            Clipboard.SetText($"{group.Problem} · Event {group.EventId} · {group.Count:N0} 次 · {group.Provider}");
+            Clipboard.SetText(FormatSummary(group));
     }
+
+    internal static string FormatSummary(ProblemGroup group) =>
+        $"{group.Problem}{Environment.NewLine}" +
+        $"Event ID: {group.EventId}{Environment.NewLine}" +
+        $"Provider: {group.Provider}{Environment.NewLine}" +
+        $"Count: {group.Count:N0}{Environment.NewLine}" +
+        $"First Seen: {group.FirstSeen:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}" +
+        $"Last Seen: {group.LastSeen:yyyy-MM-dd HH:mm:ss}";
 
     private void CopyFull_Click(object sender, RoutedEventArgs e)
     {

@@ -14,6 +14,7 @@ var tests = new (string Name, Action Run)[]
     ("XPath/time/level filters", TestXPath),
     ("Keyword and Event ID filters", TestFilters),
     ("Grouping/classifier/sorting", TestGrouping),
+    ("Problem summary", TestProblemSummary),
     ("Startup arguments", TestStartupArguments),
     ("Formatted message search", TestFormattedMessageSearch),
     ("XLSX export mapping", TestExport),
@@ -33,10 +34,16 @@ if (args.Contains("--integration"))
 {
     using (var cancellation = new CancellationTokenSource())
     {
-        cancellation.Cancel();
-        AssertThrows<OperationCanceledException>(() => WindowsEventReader.Read("System", "*", cancellation.Token, 1));
+        var firstBatchSeen = false;
+        AssertThrows<OperationCanceledException>(() => WindowsEventReader.Read("System", "*", cancellation.Token,
+            firstBatch: _ =>
+            {
+                firstBatchSeen = true;
+                cancellation.Cancel();
+            }));
+        Assert(firstBatchSeen);
     }
-    Console.WriteLine("PASS Native query cancellation");
+    Console.WriteLine("PASS In-flight native query cancellation");
 
     foreach (var channel in new[] { "System", "Application", "Setup" })
     {
@@ -52,6 +59,26 @@ if (args.Contains("--integration"))
         Assert(rows.Count == 0 || firstBatchSeen && firstBatchDetails!.SequenceEqual(rows.Select(row => row.Details)));
         if (rows.Count > 0)
         {
+            var sample = rows[0];
+            var byId = WindowsEventReader.Read(channel,
+                EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), sample.EventId, null)), CancellationToken.None, 25);
+            Assert(byId.Count > 0 && byId.All(row => row.EventId == sample.EventId));
+
+            var byProvider = WindowsEventReader.Read(channel,
+                EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), null, null, [sample.Provider])), CancellationToken.None, 25);
+            Assert(byProvider.Count > 0 && byProvider.All(row => row.Provider.Equals(sample.Provider, StringComparison.OrdinalIgnoreCase)));
+
+            var byTime = WindowsEventReader.Read(channel,
+                EventQuery.BuildXPath(new(0, TimeSpan.Zero, null, null, From: sample.Time.AddTicks(-1), To: sample.Time.AddTicks(1))),
+                CancellationToken.None, 25);
+            Assert(byTime.Any(row => row.RecordId == sample.RecordId));
+
+            var maximumLevel = sample.Level switch { "嚴重" => 1, "錯誤" => 2, "警告" => 3, "資訊" => 4, "詳細" => 5, _ => 0 };
+            var byLevel = WindowsEventReader.Read(channel,
+                EventQuery.BuildXPath(new(maximumLevel, TimeSpan.FromDays(30), null, null)), CancellationToken.None, 25);
+            Assert(maximumLevel == 0 || byLevel.Count > 0 &&
+                byLevel.All(row => LevelNumber(row.Level) is var level && level > 0 && level <= maximumLevel));
+
             WindowsEventReader.ReadMessage(rows[0]);
             foreach (var row in rows)
             {
@@ -61,6 +88,7 @@ if (args.Contains("--integration"))
                 AssertEventData(row, xml);
             }
         }
+        Console.WriteLine($"PASS Native {channel} filters (Event ID, Provider, Time, Level)");
         Console.WriteLine($"PASS Native {channel} ({rows.Count} sampled)");
     }
 
@@ -190,6 +218,9 @@ static void TestFilters()
     Assert(!EventQuery.Matches(row, EventQuery.Parse("Realtek 1000", 3, TimeSpan.FromDays(1))));
     Assert(!EventQuery.Matches(row, EventQuery.Parse("NVIDIA crash 1001", 3, TimeSpan.FromDays(1))));
     Assert(EventQuery.Matches(Row(153, "disk", "retry"), EventQuery.Parse("磁碟", 3, TimeSpan.FromDays(1))));
+    var provider = new QueryCriteria(0, TimeSpan.FromHours(1), null, null, ["disk"]);
+    Assert(EventQuery.BuildXPath(provider).Contains("Provider[@Name='disk']") && EventQuery.Matches(Row(153, "disk", "retry"), provider));
+    Assert(!EventQuery.Matches(Row(153, "storport", "retry"), provider));
 }
 
 static void TestGrouping()
@@ -214,6 +245,14 @@ static void TestStartupArguments()
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--event-id", "65536"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--query", "--today"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--unknown"]));
+}
+
+static void TestProblemSummary()
+{
+    var group = ProblemGrouping.Group([Row(153, "disk", "Retry sector 1", new DateTime(2026, 8, 24, 8, 14, 0))])[0];
+    var summary = MainWindow.FormatSummary(group);
+    Assert(summary.Contains("Event ID: 153") && summary.Contains("Provider: disk") &&
+           summary.Contains("First Seen: 2026-08-24 08:14:00") && summary.Contains("Last Seen: 2026-08-24 08:14:00"));
 }
 
 static void TestCancelledExport()
@@ -455,6 +494,16 @@ static void TestUiQueryCompletion()
 
 static EventRow Row(int id, string provider, string details, DateTime? time = null, string level = "錯誤") =>
     new(time ?? DateTime.Now, level, id, provider, "System", id, "PC", details, "<Event />");
+
+static int LevelNumber(string level) => level switch
+{
+    "嚴重" => 1,
+    "錯誤" => 2,
+    "警告" => 3,
+    "資訊" => 4,
+    "詳細" => 5,
+    _ => 0
+};
 
 static void AssertSystemFields(EventRow row, string xml)
 {

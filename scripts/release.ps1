@@ -22,6 +22,9 @@ try {
         throw "Release verification requires a clean working tree."
     }
 
+    New-Item -ItemType Directory -Path $output | Out-Null
+    $verification = Join-Path $output "verification.txt"
+
     function Invoke-DotNet([string[]]$Arguments) {
         & $dotnet @Arguments
         if ($LASTEXITCODE -ne 0) {
@@ -29,12 +32,11 @@ try {
         }
     }
 
-    Invoke-DotNet -Arguments @("build", "-c", "Release", "-warnaserror")
-    Invoke-DotNet -Arguments @("run", "--project", "tests/EventFast.Tests", "-c", "Release", "--", "--integration", "--ui")
+    Invoke-DotNet -Arguments @("build", "-c", "Release", "-warnaserror") | Tee-Object -FilePath $verification
+    Invoke-DotNet -Arguments @("run", "--project", "tests/EventFast.Tests", "-c", "Release", "--", "--integration", "--ui") | Tee-Object -FilePath $verification -Append
 
-    New-Item -ItemType Directory -Path $output | Out-Null
     if ($ExtendedChecks) {
-        Invoke-DotNet -Arguments @("run", "--project", "tests/EventFast.Tests", "-c", "Release", "--", "--excel", "--leak")
+        Invoke-DotNet -Arguments @("run", "--project", "tests/EventFast.Tests", "-c", "Release", "--", "--excel", "--leak") | Tee-Object -FilePath $verification -Append
         $benchmark = Join-Path $output "benchmark.txt"
         & $dotnet run --project benchmarks/EventFast.Benchmarks -c Release -- --large | Tee-Object -FilePath $benchmark
         if ($LASTEXITCODE -ne 0) {
