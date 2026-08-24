@@ -2,7 +2,11 @@
 
 ## v1.0.0 Release gate
 
-候選與 SHA256 會由 `scripts/release.ps1` 產生；發布仍需專案擁有者明確授權。
+候選：`artifacts/release-20260824-01/EventFast-v1.0.0-win-x64.exe`
+
+SHA256：`e7a9bbd8376871d54dbcb585cfaf7996297d0a1051160b122d735ed67d9f30fc`
+
+發布仍需專案擁有者明確授權。
 
 - [x] Release build 成功，零警告
 - [x] win-x64 self-contained EXE 產生並可啟動
@@ -12,7 +16,7 @@
 - [x] 自動測試無重大失敗
 - [x] Native leak loop 無明顯 memory／handle leak
 - [x] 本機 Microsoft Excel 開啟兩張工作表
-- [ ] 本機人工實際使用確認
+- [x] 本機實際使用：雙 Channel 查詢、UI、Details、Excel 與錯誤路徑正常
 - [ ] 人工核准 GitHub Release
 
 ## 可選、非 Release Gate
