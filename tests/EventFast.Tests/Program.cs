@@ -19,6 +19,7 @@ var tests = new (string Name, Action Run)[]
     ("XLSX export mapping", TestExport),
     ("XLSX locked-file safety", TestLockedExport),
     ("XLSX disk-full safety", TestDiskFullExport),
+    ("XLSX cancellation safety", TestCancelledExport),
     ("Unicode and long values", TestUnicode)
 };
 
@@ -30,6 +31,13 @@ foreach (var test in tests)
 
 if (args.Contains("--integration"))
 {
+    using (var cancellation = new CancellationTokenSource())
+    {
+        cancellation.Cancel();
+        AssertThrows<OperationCanceledException>(() => WindowsEventReader.Read("System", "*", cancellation.Token, 1));
+    }
+    Console.WriteLine("PASS Native query cancellation");
+
     foreach (var channel in new[] { "System", "Application", "Setup" })
     {
         var firstBatchSeen = false;
@@ -172,6 +180,7 @@ static void TestXPath()
     Assert(xpath.Contains("10800000") && xpath.Contains("Level > 0 and Level <= 2") && xpath.Contains("EventID=51"));
     var custom = EventQuery.BuildXPath(new(3, TimeSpan.Zero, null, null, From: DateTime.Today.AddDays(-7), To: DateTime.Now));
     Assert(custom.Contains("@SystemTime >=") && custom.Contains("@SystemTime <="));
+    Assert(EventQuery.BuildXPath(new(0, TimeSpan.Zero, null, null)) == "*");
 }
 
 static void TestFilters()
@@ -179,6 +188,8 @@ static void TestFilters()
     var row = Row(1000, "Application Error", "NVIDIA module crash");
     Assert(EventQuery.Matches(row, EventQuery.Parse("NVIDIA crash 1000", 3, TimeSpan.FromDays(1))));
     Assert(!EventQuery.Matches(row, EventQuery.Parse("Realtek 1000", 3, TimeSpan.FromDays(1))));
+    Assert(!EventQuery.Matches(row, EventQuery.Parse("NVIDIA crash 1001", 3, TimeSpan.FromDays(1))));
+    Assert(EventQuery.Matches(Row(153, "disk", "retry"), EventQuery.Parse("磁碟", 3, TimeSpan.FromDays(1))));
 }
 
 static void TestGrouping()
@@ -187,19 +198,35 @@ static void TestGrouping()
     var groups = ProblemGrouping.Group([
         Row(153, "disk", "Retry sector 123", now.AddMinutes(-2), "警告"),
         Row(153, "disk", "Retry sector 456", now, "錯誤"),
-        Row(1000, "Application Error", "App failed", now, "錯誤")
+        Row(1000, "Application Error", "App failed", now, "錯誤"),
+        Row(2, "Provider", "Failure 01234567-89ab-cdef-0123-456789abcdef at 0xabcdef12", now, "錯誤"),
+        Row(2, "Provider", "Failure fedcba98-7654-3210-fedc-ba9876543210 at 0x12345678", now, "錯誤")
     ]);
-    Assert(groups.Count == 2 && groups[0].Problem == "磁碟 I/O 重試" && groups[0].Count == 2 && groups[0].Severity == "錯誤");
+    Assert(groups.Count == 3 && groups.Any(group => group.Problem == "磁碟 I/O 重試" && group.Count == 2 && group.Severity == "錯誤") &&
+           groups.Any(group => group.Provider == "Provider" && group.Count == 2));
 }
 
 static void TestStartupArguments()
 {
-    var options = StartupOptions.Parse(["--hours", "24", "--event-id", "51", "--query", "disk"]);
-    Assert(options.Hours == 24 && options.EventId == 51 && options.Query == "disk" && options.AutoRun);
+    var options = StartupOptions.Parse(["--hours", "24", "--event-id", "51", "--provider", "disk", "--query", "retry"]);
+    Assert(options.Hours == 24 && options.EventId == 51 && options.Provider == "disk" && options.Query == "retry" && options.AutoRun);
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--today", "--hours", "1"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--event-id", "65536"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--query", "--today"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--unknown"]));
+}
+
+static void TestCancelledExport()
+{
+    WithPath(path =>
+    {
+        File.WriteAllText(path, "original");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        AssertThrows<OperationCanceledException>(() => XlsxExporter.Export(path, [], [], cancellationToken: cancellation.Token));
+        Assert(File.ReadAllText(path) == "original");
+        Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(path)!, $"{Path.GetFileName(path)}.*.tmp").Any());
+    });
 }
 
 static void TestFormattedMessageSearch()
@@ -366,7 +393,7 @@ static void TestUiQueryCompletion()
         try
         {
             var app = new Application();
-            var window = new MainWindow(new(null, false, 24, null, null));
+            var window = new MainWindow(new(null, false, 24, null, null, null));
             var eventsGrid = (DataGrid)window.FindName("EventsGrid");
             var occurrencesGrid = (DataGrid)window.FindName("OccurrencesGrid");
             var sampleRows = new[]
@@ -379,7 +406,7 @@ static void TestUiQueryCompletion()
             eventsGrid.SelectedItem = sampleGroup;
             Assert(occurrencesGrid.Items.Count == 2);
             Assert(((TabItem)window.FindName("OccurrencesTab")).Header.ToString()!.Contains("2"));
-            ((ComboBox)window.FindName("SortBox")).SelectedIndex = 3;
+            ((ComboBox)window.FindName("SortBox")).SelectedIndex = 4;
             window.Show();
             window.Hide();
             Assert(((ComboBoxItem)((ComboBox)window.FindName("TimeBox")).SelectedItem).Tag.ToString() == "24");

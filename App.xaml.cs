@@ -35,14 +35,15 @@ public partial class App : Application
     }
 }
 
-internal sealed record StartupOptions(string? EventFile, bool Today, int? Hours, int? EventId, string? Query)
+internal sealed record StartupOptions(string? EventFile, bool Today, int? Hours, int? EventId, string? Query, string? Provider)
 {
-    internal bool AutoRun => EventFile is not null || Today || Hours is not null || EventId is not null || Query is not null;
+    internal bool AutoRun => EventFile is not null || Today || Hours is not null || EventId is not null || Query is not null || Provider is not null;
 
     internal static StartupOptions Parse(IReadOnlyList<string> args)
     {
         string? eventFile = null;
         string? query = null;
+        string? provider = null;
         int? hours = null;
         int? eventId = null;
         var today = false;
@@ -67,6 +68,9 @@ internal sealed record StartupOptions(string? EventFile, bool Today, int? Hours,
                 case "--query":
                     query = Value(args, ref index, "--query");
                     break;
+                case "--provider":
+                    provider = Value(args, ref index, "--provider");
+                    break;
                 default:
                     if (args[index].StartsWith("--", StringComparison.Ordinal))
                         throw new ArgumentException($"不支援的啟動參數：{args[index]}");
@@ -79,7 +83,7 @@ internal sealed record StartupOptions(string? EventFile, bool Today, int? Hours,
 
         if (today && hours is not null)
             throw new ArgumentException("--today 與 --hours 不可同時使用。");
-        return new(eventFile, today, hours, eventId, query);
+        return new(eventFile, today, hours, eventId, query, provider);
     }
 
     private static int PositiveInteger(IReadOnlyList<string> args, ref int index, string option)

@@ -13,9 +13,11 @@ internal static class XlsxExporter
     private const string Relationships = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
     internal static void Export(string path, IReadOnlyList<ProblemGroup> groups, IEnumerable<EventRow> events,
-        bool includeXml = false, Func<EventRow, string>? messageFactory = null, Func<EventRow, string>? xmlFactory = null)
+        bool includeXml = false, Func<EventRow, string>? messageFactory = null, Func<EventRow, string>? xmlFactory = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        cancellationToken.ThrowIfCancellationRequested();
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
@@ -28,14 +30,14 @@ internal static class XlsxExporter
                 WriteText(archive, "xl/styles.xml", Styles);
                 WriteSheet(archive, "xl/worksheets/sheet1.xml",
                     ["Severity", "Problem", "Count", "Event ID", "Provider", "First Seen", "Last Seen", "Channel"],
-                    groups.Select(group => new object?[] { group.Severity, group.Problem, group.Count, group.EventId, group.Provider, group.FirstSeen, group.LastSeen, group.Channel }));
+                    groups.Select(group => new object?[] { group.Severity, group.Problem, group.Count, group.EventId, group.Provider, group.FirstSeen, group.LastSeen, group.Channel }), cancellationToken);
                 WriteSheet(archive, "xl/worksheets/sheet2.xml",
                     includeXml
                         ? ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message", "XML"]
                         : ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message"],
                     events.Select(row => includeXml
                         ? new object?[] { row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row), (xmlFactory ?? DefaultXml)(row) }
-                        : [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row)]));
+                        : [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row)]), cancellationToken);
             }
             File.Move(temporaryPath, path, true);
         }
@@ -48,7 +50,7 @@ internal static class XlsxExporter
     private static string DefaultMessage(EventRow row) => row.Details;
     private static string DefaultXml(EventRow row) => row.Xml;
 
-    private static void WriteSheet(ZipArchive archive, string name, string[] headers, IEnumerable<object?[]> rows)
+    private static void WriteSheet(ZipArchive archive, string name, string[] headers, IEnumerable<object?[]> rows, CancellationToken cancellationToken)
     {
         using var writer = XmlWriter.Create(archive.CreateEntry(name, CompressionLevel.Fastest).Open(), new XmlWriterSettings { Encoding = new UTF8Encoding(false), CloseOutput = true });
         writer.WriteStartDocument();
@@ -58,6 +60,7 @@ internal static class XlsxExporter
         var rowNumber = 2;
         foreach (var row in rows)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (rowNumber > 1_048_576)
                 throw new InvalidOperationException("事件數量超過單一 Excel 工作表上限。 ");
             WriteRow(writer, rowNumber++, row);

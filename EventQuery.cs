@@ -23,7 +23,7 @@ internal static class EventQuery
         ["crash"] = new("程式崩潰", ["Application Error", ".NET Runtime", "Windows Error Reporting"], [1000, 1001, 1026], ["Application"]),
         ["disk"] = new("磁碟 / SSD / NVMe", ["disk", "storahci", "stornvme", "storport", "Ntfs", "Microsoft-Windows-Ntfs", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 55, 98, 129, 140, 153, 157], ["System"]),
         ["ntfs"] = new("NTFS / 檔案系統", ["Ntfs", "Microsoft-Windows-Ntfs"], [55, 98, 140], ["System"]),
-        ["usb"] = new("USB / USB-C", ["Microsoft-Windows-DriverFrameworks-UserMode", "Microsoft-Windows-USB-USBHUB3", "UcmUcsiCx"], [10110, 10111], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
+        ["usb"] = new("USB / USB-C", ["USBHUB", "USBXHCI", "Microsoft-Windows-USB-USBHUB3", "Microsoft-Windows-USB-USBXHCI", "UCSI", "UcmUcsiCx", "Microsoft-Windows-DriverFrameworks-UserMode"], [10110, 10111], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
         ["device"] = new("裝置", ["Microsoft-Windows-Kernel-PnP", "Kernel-PnP"], [219, 225, 411], ["System", "Microsoft-Windows-Kernel-PnP/Configuration"]),
         ["driver"] = new("驅動程式", ["Microsoft-Windows-Kernel-PnP", "Service Control Manager"], [219, 7000, 7001, 7026], ["System"]),
         ["whea"] = new("硬體 / WHEA", ["Microsoft-Windows-WHEA-Logger", "WHEA-Logger"], [1, 17, 18, 19, 20, 46, 47], ["System"]),
@@ -48,8 +48,12 @@ internal static class EventQuery
     {
         var time = criteria.From is { } from && criteria.To is { } to
             ? $"TimeCreated[@SystemTime >= '{Utc(from)}' and @SystemTime <= '{Utc(to)}']"
-            : $"TimeCreated[timediff(@SystemTime) <= {(long)criteria.Period.TotalMilliseconds}]";
-        var conditions = new List<string> { time };
+            : criteria.Period > TimeSpan.Zero
+                ? $"TimeCreated[timediff(@SystemTime) <= {(long)criteria.Period.TotalMilliseconds}]"
+                : null;
+        var conditions = new List<string>();
+        if (time is not null)
+            conditions.Add(time);
 
         if (criteria.MaximumLevel > 0)
             conditions.Add($"Level > 0 and Level <= {criteria.MaximumLevel}");
@@ -61,14 +65,18 @@ internal static class EventQuery
         if (quick.Length > 0)
             conditions.Add($"({string.Join(" or ", quick)})");
 
-        return $"*[System[{string.Join(" and ", conditions)}]]";
+        return conditions.Count == 0 ? "*" : $"*[System[{string.Join(" and ", conditions)}]]";
     }
 
     internal static bool Matches(EventRow row, QueryCriteria criteria)
     {
+        if (criteria.EventId is { } eventId && row.EventId != eventId)
+            return false;
+
         if (criteria.Keyword is { } keyword && keyword.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(word =>
                 !row.Provider.Contains(word, StringComparison.OrdinalIgnoreCase) &&
-                !row.Details.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                !row.Details.Contains(word, StringComparison.OrdinalIgnoreCase) &&
+                !ProblemClassifier.Classify(row).Contains(word, StringComparison.OrdinalIgnoreCase)))
             return false;
 
         if ((criteria.Providers?.Count ?? 0) + (criteria.EventIds?.Count ?? 0) == 0)
@@ -87,7 +95,7 @@ internal static class EventQuery
         throw new ArgumentException("Provider 不可同時包含單引號與雙引號。", nameof(value));
     }
 
-    private static string Utc(DateTime value) => value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+    private static string Utc(DateTime value) => value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ", CultureInfo.InvariantCulture);
 
     internal static void SelfTest()
     {

@@ -80,7 +80,7 @@ internal static class ProblemGrouping
             .Split('\r', '\n')
             .Select(line => line.Trim())
             .FirstOrDefault(line => line.Length > 0) ?? "";
-        return Regex.Replace(Regex.Replace(firstLine, @"\d+", "#"), @"\s+", " ");
+        return Regex.Replace(Regex.Replace(firstLine, @"\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b|\b0x[0-9a-fA-F]+\b|\d+", "#"), @"\s+", " ");
     }
 
     private static string SeverityLabel(string level) => level switch

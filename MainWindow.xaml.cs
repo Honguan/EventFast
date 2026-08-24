@@ -11,7 +11,7 @@ namespace EventFast;
 
 public partial class MainWindow : Window, IDisposable
 {
-    private CancellationTokenSource? _queryCancellation;
+    private CancellationTokenSource? _operationCancellation;
     private readonly EventCache _cache = new();
     private IReadOnlyList<ProblemGroup> _groups = [];
     private IReadOnlyList<EventRow> _rows = [];
@@ -24,10 +24,10 @@ public partial class MainWindow : Window, IDisposable
         InitializeComponent();
         FromDate.SelectedDate = DateTime.Today.AddDays(-1);
         ToDate.SelectedDate = DateTime.Today;
-        options ??= new(null, false, null, null, null);
+        options ??= new(null, false, null, null, null, null);
         _eventFile = options.EventFile;
         if (options.Today)
-            TimeBox.SelectedIndex = 3;
+            TimeBox.SelectedIndex = 4;
         else if (options.Hours is { } hours)
         {
             var tag = hours.ToString(CultureInfo.InvariantCulture);
@@ -39,11 +39,13 @@ public partial class MainWindow : Window, IDisposable
             }
             TimeBox.SelectedItem = item;
         }
-        SearchBox.Text = string.Join(' ', new[] { options.Query, options.EventId?.ToString(CultureInfo.InvariantCulture) }.OfType<string>());
+        SearchBox.Text = string.Join(' ', new[] { options.Query, options.Provider, options.EventId?.ToString(CultureInfo.InvariantCulture) }.OfType<string>());
         if (_eventFile is not null)
         {
             Title = $"EventFast — {Path.GetFileName(_eventFile)}";
             SystemBox.IsEnabled = ApplicationBox.IsEnabled = false;
+            if (!options.Today && options.Hours is null)
+                TimeBox.SelectedIndex = TimeBox.Items.Count - 1;
         }
         if (options.AutoRun)
             Loaded += (_, _) => Dispatcher.BeginInvoke(() => _ = RunQueryAsync(null));
@@ -69,11 +71,13 @@ public partial class MainWindow : Window, IDisposable
             return;
         }
 
-        _queryCancellation?.Cancel();
-        _queryCancellation?.Dispose();
-        _queryCancellation = new CancellationTokenSource();
-        var token = _queryCancellation.Token;
+        _operationCancellation?.Cancel();
+        _operationCancellation?.Dispose();
+        var operation = _operationCancellation = new CancellationTokenSource();
+        var token = operation.Token;
         SearchButton.IsEnabled = false;
+        ExportButton.IsEnabled = false;
+        CancelButton.IsEnabled = true;
         StatusText.Text = quick is null ? "查詢中…" : $"查詢「{quick.Name}」…";
 
         try
@@ -125,6 +129,7 @@ public partial class MainWindow : Window, IDisposable
             var rows = allRows.Where(row => EventQuery.Matches(row, criteria)).ToArray();
             token.ThrowIfCancellationRequested();
             var groups = ProblemGrouping.Group(rows);
+            token.ThrowIfCancellationRequested();
             _rows = rows;
             _allRows = allRows;
             _groups = groups;
@@ -139,15 +144,24 @@ public partial class MainWindow : Window, IDisposable
         }
         catch (OperationCanceledException)
         {
-            StatusText.Text = "查詢已取消。";
+            if (ReferenceEquals(_operationCancellation, operation))
+                StatusText.Text = "查詢已取消。";
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
+            if (ReferenceEquals(_operationCancellation, operation))
+                StatusText.Text = exception.Message;
         }
         finally
         {
-            SearchButton.IsEnabled = true;
+            if (ReferenceEquals(_operationCancellation, operation))
+            {
+                _operationCancellation = null;
+                operation.Dispose();
+                SearchButton.IsEnabled = true;
+                CancelButton.IsEnabled = false;
+                ExportButton.IsEnabled = _groups.Count > 0;
+            }
         }
     }
 
@@ -163,6 +177,7 @@ public partial class MainWindow : Window, IDisposable
         _eventFile = Path.GetFullPath(files[0]);
         Title = $"EventFast — {Path.GetFileName(_eventFile)}";
         SystemBox.IsEnabled = ApplicationBox.IsEnabled = false;
+        TimeBox.SelectedIndex = TimeBox.Items.Count - 1;
         await RunQueryAsync(null);
     }
 
@@ -197,6 +212,11 @@ public partial class MainWindow : Window, IDisposable
             return;
 
         ExportButton.IsEnabled = false;
+        SearchButton.IsEnabled = false;
+        _operationCancellation?.Cancel();
+        _operationCancellation?.Dispose();
+        var operation = _operationCancellation = new CancellationTokenSource();
+        CancelButton.IsEnabled = true;
         StatusText.Text = "正在匯出 Excel…";
         try
         {
@@ -213,19 +233,34 @@ public partial class MainWindow : Window, IDisposable
             await Task.Run(() =>
             {
                 using var formatter = WindowsEventReader.CreateMessageFormatter();
-                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, formatter.Format, WindowsEventReader.ReadXml);
-            });
+                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, formatter.Format, WindowsEventReader.ReadXml, operation.Token);
+            }, operation.Token);
             StatusText.Text = $"已匯出 {Path.GetFileName(dialog.FileName)}";
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(_operationCancellation, operation))
+                StatusText.Text = "匯出已取消。";
         }
         catch (Exception exception)
         {
-            StatusText.Text = $"匯出失敗：{exception.Message}";
+            if (ReferenceEquals(_operationCancellation, operation))
+                StatusText.Text = $"匯出失敗：{exception.Message}";
         }
         finally
         {
-            ExportButton.IsEnabled = _groups.Count > 0;
+            if (ReferenceEquals(_operationCancellation, operation))
+            {
+                _operationCancellation = null;
+                operation.Dispose();
+                SearchButton.IsEnabled = true;
+                CancelButton.IsEnabled = false;
+                ExportButton.IsEnabled = _groups.Count > 0;
+            }
         }
     }
+
+    private void Cancel_Click(object sender, RoutedEventArgs e) => _operationCancellation?.Cancel();
 
     private void Sort_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -243,6 +278,7 @@ public partial class MainWindow : Window, IDisposable
         EventsGrid.ItemsSource = (item.Tag.ToString() switch
         {
             "latest" => _groups.OrderByDescending(group => group.LastSeen),
+            "oldest" => _groups.OrderBy(group => group.FirstSeen),
             "frequent" => _groups.OrderByDescending(group => group.Count),
             "eventId" => _groups.OrderBy(group => group.EventId),
             "provider" => _groups.OrderBy(group => group.Provider),
@@ -285,6 +321,12 @@ public partial class MainWindow : Window, IDisposable
         }
         else if (e.Key == Key.Escape)
         {
+            if (_operationCancellation is not null)
+            {
+                _operationCancellation.Cancel();
+                e.Handled = true;
+                return;
+            }
             EventsGrid.SelectedItem = null;
             DetailsBox.Clear();
             e.Handled = true;
@@ -298,6 +340,7 @@ public partial class MainWindow : Window, IDisposable
         {
             "today" => DateTime.Now - DateTime.Today,
             "custom" => TimeSpan.FromDays(1),
+            "all" => TimeSpan.Zero,
             _ => TimeSpan.FromHours(double.Parse(tag, CultureInfo.InvariantCulture))
         };
     }
@@ -403,9 +446,9 @@ public partial class MainWindow : Window, IDisposable
 
     public void Dispose()
     {
-        _queryCancellation?.Cancel();
-        _queryCancellation?.Dispose();
-        _queryCancellation = null;
+        _operationCancellation?.Cancel();
+        _operationCancellation?.Dispose();
+        _operationCancellation = null;
         GC.SuppressFinalize(this);
     }
 }

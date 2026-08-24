@@ -15,6 +15,8 @@
         <DockPanel LastChildFill="True">
             <Button x:Name="SearchButton" DockPanel.Dock="Right" Width="96" Margin="8,0,0,0"
                     Content="搜尋" IsDefault="True" Click="Search_Click" />
+            <Button x:Name="CancelButton" DockPanel.Dock="Right" Width="72" Margin="8,0,0,0"
+                    Content="取消" IsEnabled="False" Click="Cancel_Click" />
             <Button x:Name="ExportButton" DockPanel.Dock="Right" Width="110" IsEnabled="False"
                     Content="匯出 Excel" Click="Export_Click" />
             <ComboBox x:Name="ExportScopeBox" DockPanel.Dock="Right" Width="110" SelectedIndex="0" Margin="8,0">
@@ -29,9 +31,10 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12">
             <TextBlock Text="時間：" VerticalAlignment="Center" />
-            <ComboBox x:Name="TimeBox" Width="125" SelectedIndex="4" SelectionChanged="Time_Changed">
+            <ComboBox x:Name="TimeBox" Width="125" SelectedIndex="5" SelectionChanged="Time_Changed">
                 <ComboBoxItem Tag="1">最近 1 小時</ComboBoxItem>
                 <ComboBoxItem Tag="3">最近 3 小時</ComboBoxItem>
+                <ComboBoxItem Tag="6">最近 6 小時</ComboBoxItem>
                 <ComboBoxItem Tag="12">最近 12 小時</ComboBoxItem>
                 <ComboBoxItem Tag="today">今天</ComboBoxItem>
                 <ComboBoxItem Tag="24">最近 24 小時</ComboBoxItem>
@@ -39,6 +42,7 @@
                 <ComboBoxItem Tag="168">最近 7 天</ComboBoxItem>
                 <ComboBoxItem Tag="720">最近 30 天</ComboBoxItem>
                 <ComboBoxItem Tag="custom">自訂</ComboBoxItem>
+                <ComboBoxItem Tag="all">全部時間</ComboBoxItem>
             </ComboBox>
             <StackPanel x:Name="CustomTimePanel" Orientation="Horizontal" Visibility="Collapsed" Margin="8,0,0,0">
                 <DatePicker x:Name="FromDate" Width="120" />
@@ -59,6 +63,7 @@
             <ComboBox x:Name="SortBox" Width="100" SelectedIndex="0" SelectionChanged="Sort_Changed">
                 <ComboBoxItem Tag="default">預設</ComboBoxItem>
                 <ComboBoxItem Tag="latest">最新</ComboBoxItem>
+                <ComboBoxItem Tag="oldest">最舊</ComboBoxItem>
                 <ComboBoxItem Tag="frequent">最頻繁</ComboBoxItem>
                 <ComboBoxItem Tag="eventId">Event ID</ComboBoxItem>
                 <ComboBoxItem Tag="provider">Provider</ComboBoxItem>
