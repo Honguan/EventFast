@@ -118,14 +118,16 @@
                     </DataGrid>
                 </TabItem>
                 <TabItem Header="事件內容">
-                    <Grid>
+                    <Grid Margin="8">
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <Button Content="複製問題" Click="CopyProblem_Click" Margin="0,0,6,0" />
-                            <Button Content="複製完整內容" Click="CopyFull_Click" Margin="0,0,6,0" />
-                            <Button Content="複製 XML" Click="CopyXml_Click" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button Content="複製問題" Click="CopyProblem_Click" Margin="0,0,6,0" Padding="10,4" />
+                            <Button Content="複製完整內容" Click="CopyFull_Click" Margin="0,0,6,0" Padding="10,4" />
+                            <Button Content="複製 XML" Click="CopyXml_Click" Padding="10,4" />
                         </StackPanel>
                         <TextBox x:Name="DetailsBox" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                 Padding="12" FontFamily="Microsoft JhengHei UI" FontSize="14" TextBlock.LineHeight="22"
+                                 Background="White" BorderBrush="#C7D2DE"
                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
                     </Grid>
                 </TabItem>

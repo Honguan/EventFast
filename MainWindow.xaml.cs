@@ -416,10 +416,28 @@ public partial class MainWindow : Window, IDisposable
         if (!ReferenceEquals(EventsGrid.SelectedItem, group))
             return;
         _selectedXml = content.Xml;
-        DetailsBox.Text =
-            $"{group.Problem}\n發生 {group.Count:N0} 次 · 首次 {group.FirstSeen:G} · 最後 {group.LastSeen:G}\n\n" +
-            $"{row.Time:G}\n{row.Level} · Event {row.EventId} · {row.Provider}\n" +
-            $"{row.Channel} · {row.Computer} · Record {row.RecordId}\n\n{content.Message}\n\n{content.Xml}";
+        DetailsBox.Text = FormatDetails(group, row, content.Message, content.Xml);
+    }
+
+    internal static string FormatDetails(ProblemGroup group, EventRow row, string message, string xml)
+    {
+        var line = Environment.NewLine;
+        return
+            $"【問題摘要】{line}" +
+            $"{group.Problem}{line}" +
+            $"發生次數：{group.Count:N0}{line}" +
+            $"首次發生：{group.FirstSeen:yyyy-MM-dd HH:mm:ss}{line}" +
+            $"最後發生：{group.LastSeen:yyyy-MM-dd HH:mm:ss}{line}{line}" +
+            $"【事件資訊】{line}" +
+            $"時間：{row.Time:yyyy-MM-dd HH:mm:ss}{line}" +
+            $"等級：{row.Level}{line}" +
+            $"Event ID：{row.EventId}{line}" +
+            $"Provider：{row.Provider}{line}" +
+            $"Channel：{row.Channel}{line}" +
+            $"Computer：{row.Computer}{line}" +
+            $"Record ID：{row.RecordId}{line}{line}" +
+            $"【事件訊息】{line}{message.Trim()}{line}{line}" +
+            $"【原始 XML】{line}{xml.Trim()}";
     }
 
     internal static IReadOnlyList<EventRow> AddMessages(IReadOnlyList<EventRow> rows, CancellationToken cancellationToken = default)

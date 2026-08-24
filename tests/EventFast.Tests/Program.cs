@@ -15,6 +15,7 @@ var tests = new (string Name, Action Run)[]
     ("Keyword and Event ID filters", TestFilters),
     ("Grouping/classifier/sorting", TestGrouping),
     ("Problem summary", TestProblemSummary),
+    ("Event details layout", TestEventDetailsLayout),
     ("Startup arguments", TestStartupArguments),
     ("Formatted message search", TestFormattedMessageSearch),
     ("XLSX export mapping", TestExport),
@@ -255,6 +256,15 @@ static void TestProblemSummary()
            summary.Contains("First Seen: 2026-08-24 08:14:00") && summary.Contains("Last Seen: 2026-08-24 08:14:00"));
 }
 
+static void TestEventDetailsLayout()
+{
+    var row = Row(17, "Microsoft-Windows-WHEA-Logger", "payload", new DateTime(2026, 8, 24, 22, 45, 57), "警告");
+    var group = ProblemGrouping.Group([row])[0];
+    var details = MainWindow.FormatDetails(group, row, "發生已修正的硬體錯誤。", "<Event />");
+    Assert(details.Contains("事件資訊") && details.Contains("時間：2026-08-24 22:45:57") &&
+           details.Contains("Event ID：17") && details.Contains("事件訊息") && details.Contains("原始 XML"));
+}
+
 static void TestCancelledExport()
 {
     WithPath(path =>
@@ -435,6 +445,7 @@ static void TestUiQueryCompletion()
             var window = new MainWindow(new(null, false, 24, null, null, null));
             var eventsGrid = (DataGrid)window.FindName("EventsGrid");
             var occurrencesGrid = (DataGrid)window.FindName("OccurrencesGrid");
+            var detailsBox = (TextBox)window.FindName("DetailsBox");
             var sampleRows = new[]
             {
                 Row(153, "disk", "Retry sector 1"),
@@ -448,6 +459,8 @@ static void TestUiQueryCompletion()
             ((ComboBox)window.FindName("SortBox")).SelectedIndex = 4;
             window.Show();
             window.Hide();
+            Assert(detailsBox.Padding == new Thickness(12) && detailsBox.FontSize == 14 &&
+                   TextBlock.GetLineHeight(detailsBox) == 22 && detailsBox.FontFamily.Source == "Microsoft JhengHei UI");
             Assert(((ComboBoxItem)((ComboBox)window.FindName("TimeBox")).SelectedItem).Tag.ToString() == "24");
             var stopwatch = Stopwatch.StartNew();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
