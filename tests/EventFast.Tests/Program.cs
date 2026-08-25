@@ -16,6 +16,7 @@ var tests = new (string Name, Action Run)[]
     ("Localization and settings", TestLocalization),
     ("XPath/time/level filters", TestXPath),
     ("Keyword and Event ID filters", TestFilters),
+    ("Provider-aware quick filters", TestQuickFilters),
     ("Grouping/classifier/sorting", TestGrouping),
     ("Problem summary", TestProblemSummary),
     ("Event details layout", TestEventDetailsLayout),
@@ -260,6 +261,41 @@ static void TestFilters()
     Assert(!EventQuery.Matches(Row(153, "storport", "retry"), provider));
 }
 
+static void TestQuickFilters()
+{
+    var cases = new[]
+    {
+        ("crash", Row(1000, "Application Error", "crash"), Row(1000, "Other", "crash")),
+        ("disk", Row(129, "storport", "timeout"), Row(129, "Tcpip", "timeout")),
+        ("ntfs", Row(55, "Ntfs", "corrupt"), Row(55, "disk", "corrupt")),
+        ("usb", Row(7, "USBHUB", "failure"), Row(7, "disk", "failure")),
+        ("device", Row(411, "Microsoft-Windows-Kernel-PnP", "start"), Row(411, "Other", "start")),
+        ("driver", Row(7026, "Service Control Manager", "load"), Row(7026, "Other", "load")),
+        ("network", Row(1014, "Microsoft-Windows-DNS-Client", "timeout"), Row(1014, "Other", "timeout")),
+        ("power", Row(41, "Microsoft-Windows-Kernel-Power", "power"), Row(41, "Other", "power"))
+    };
+    foreach (var (name, valid, invalid) in cases)
+    {
+        var criteria = EventQuery.FromQuick(EventQuery.QuickQueries[name], 3, TimeSpan.FromDays(1));
+        Assert(EventQuery.Matches(valid, criteria) && !EventQuery.Matches(invalid, criteria));
+    }
+
+    var whea = EventQuery.FromQuick(EventQuery.QuickQueries["whea"], 3, TimeSpan.FromDays(1));
+    Assert(EventQuery.Matches(Row(19, "Microsoft-Windows-WHEA-Logger", "hardware"), whea));
+    Assert(!EventQuery.Matches(Row(19, "Microsoft-Windows-WindowsUpdateClient", "update"), whea));
+    Assert(!EventQuery.Matches(Row(1, "Microsoft-Windows-Kernel-General", "clock"), whea));
+    var update = EventQuery.FromQuick(EventQuery.QuickQueries["update"], 3, TimeSpan.FromDays(1));
+    Assert(EventQuery.Matches(Row(19, "Microsoft-Windows-WindowsUpdateClient", "update"), update));
+    Assert(!EventQuery.Matches(Row(19, "Microsoft-Windows-WHEA-Logger", "hardware"), update));
+    var xpath = EventQuery.BuildXPath(whea);
+    Assert(xpath.Contains("Provider[@Name='Microsoft-Windows-WHEA-Logger'] and") &&
+           !xpath.Contains("EventID=19 or Provider"));
+    Assert(ProblemClassifier.Classify("Microsoft-Windows-WHEA-Logger", 17) == "WHEA hardware event (Event ID 17)" &&
+           ProblemClassifier.Classify("USBHUB", 7) == "USB / UCSI event" &&
+           ProblemClassifier.Classify("Microsoft-Windows-WindowsUpdateClient", 19) == "Windows Update installation succeeded" &&
+           ProblemClassifier.Classify("Fake-USB-Provider", 7) == "Fake-USB-Provider + Event ID 7");
+}
+
 static void TestGrouping()
 {
     var now = DateTime.Now;
@@ -269,10 +305,28 @@ static void TestGrouping()
         Row(153, "disk", "Retry sector 456", now, "Error"),
         Row(1000, "Application Error", "App failed", now, "Error"),
         Row(2, "Provider", "Failure\nDevice 01234567-89ab-cdef-0123-456789abcdef status 0xabcdef12", now, "Error"),
-        Row(2, "Provider", "Failure\nDevice fedcba98-7654-3210-fedc-ba9876543210 status 0x12345678", now, "Error")
+        Row(2, "Provider", "Failure\nDevice fedcba98-7654-3210-fedc-ba9876543210 status 0x12345678", now, "Error"),
+        Row(3, "Provider", "Failure 0xC0000005 process 1", now, "Error"),
+        Row(3, "Provider", "Failure 0xDEADBEEF process 2", now, "Error"),
+        Row(19, "Microsoft-Windows-WindowsUpdateClient", "Update Alpha KB123 installed", now, "Information"),
+        Row(19, "Microsoft-Windows-WindowsUpdateClient", "Update Beta KB456 installed", now, "Information"),
+        Row(17, "Microsoft-Windows-WHEA-Logger", "corrected", now, "Warning"),
+        Row(18, "Microsoft-Windows-WHEA-Logger", "fatal", now, "Error")
     ]);
-    Assert(groups.Count == 5 && groups.Any(group => group.Problem == "Disk I/O retry" && group.Count == 2 && group.Severity == "Error") &&
-           groups.Count(group => group.Provider == "disk") == 2 && groups.Count(group => group.Provider == "Provider") == 2);
+    Assert(groups.Count == 9 && groups.Any(group => group.Problem == "Disk I/O retry" && group.Count == 3 && group.Severity == "Error") &&
+           groups.Count(group => group.Provider == "disk") == 1 && groups.Count(group => group.Provider == "Provider") == 4 &&
+           groups.Any(group => group.Provider == "Microsoft-Windows-WindowsUpdateClient" && group.Count == 2 &&
+                               group.Problem == "Windows Update installation succeeded") &&
+           groups.Count(group => group.Provider == "Microsoft-Windows-WHEA-Logger") == 2);
+
+    var identity = groups.Select(group => (group.Provider, group.EventId, group.Count)).Order().ToArray();
+    AppLocalization.UseLanguage("zh-TW");
+    var chineseGroups = ProblemGrouping.Group(groups.SelectMany(group => group.Events));
+    Assert(chineseGroups.Select(group => (group.Provider, group.EventId, group.Count)).Order().SequenceEqual(identity) &&
+           chineseGroups.Any(group => group.Problem == "Windows Update 安裝成功"));
+    var fallback = Row(999, "Unknown", "details");
+    Assert(EventQuery.Matches(fallback, EventQuery.Parse("Unknown Event ID", 3, TimeSpan.Zero)));
+    AppLocalization.UseLanguage("en");
 }
 
 static void TestStartupArguments()

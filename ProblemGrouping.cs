@@ -20,15 +20,16 @@ internal static class ProblemClassifier
     internal static string Classify(string provider, int eventId)
     {
         var key = ClassificationKey(provider, eventId);
-        return key is null ? Localization.Format("ProblemFallback", provider, eventId) : Localization.Text(key);
+        return key is null ? Localization.Format("ProblemFallback", provider, eventId) : Localization.Format(key, eventId);
     }
 
     internal static string SearchText(EventRow row)
     {
         var key = ClassificationKey(row.Provider, row.EventId);
         return key is null
-            ? Localization.Format("ProblemFallback", row.Provider, row.EventId)
-            : $"{Localization.Text(key, "en")} {Localization.Text(key, "zh-TW")}";
+            ? $"{Localization.FormatForLanguage("ProblemFallback", "en", row.Provider, row.EventId)} " +
+              Localization.FormatForLanguage("ProblemFallback", "zh-TW", row.Provider, row.EventId)
+            : $"{Localization.FormatForLanguage(key, "en", row.EventId)} {Localization.FormatForLanguage(key, "zh-TW", row.EventId)}";
     }
 
     private static string? ClassificationKey(string provider, int eventId) =>
@@ -36,9 +37,29 @@ internal static class ProblemClassifier
         {
             var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 153 => "ProblemDiskRetry",
             var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 51 => "ProblemDiskError",
+            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId is 7 or 11 or 157 => "ProblemStorageError",
+            var p when (p.Equals("storahci", StringComparison.OrdinalIgnoreCase) || p.Equals("stornvme", StringComparison.OrdinalIgnoreCase) || p.Equals("storport", StringComparison.OrdinalIgnoreCase)) && eventId == 129 => "ProblemStorageTimeout",
+            var p when (p.Equals("Ntfs", StringComparison.OrdinalIgnoreCase) || p.Equals("Microsoft-Windows-Ntfs", StringComparison.OrdinalIgnoreCase)) && eventId == 55 => "ProblemNtfsCorruption",
+            var p when (p.Equals("Ntfs", StringComparison.OrdinalIgnoreCase) || p.Equals("Microsoft-Windows-Ntfs", StringComparison.OrdinalIgnoreCase)) && eventId is 98 or 140 => "ProblemNtfsEvent",
+            var p when EventQuery.MatchesQuick("disk", p, eventId) => "ProblemStorageEvent",
             var p when p.EndsWith("Kernel-Power", StringComparison.OrdinalIgnoreCase) && eventId == 41 => "ProblemUnexpectedShutdown",
+            var p when p.Equals("EventLog", StringComparison.OrdinalIgnoreCase) && eventId == 6008 => "ProblemUnexpectedShutdown",
             var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1000 => "ProblemAppCrash",
-            var p when p.Contains("WHEA-Logger", StringComparison.OrdinalIgnoreCase) => "ProblemWhea",
+            var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1001 => "ProblemAppFailure",
+            var p when p.Equals(".NET Runtime", StringComparison.OrdinalIgnoreCase) && eventId == 1026 => "ProblemDotNetFailure",
+            var p when p.Equals("Windows Error Reporting", StringComparison.OrdinalIgnoreCase) && eventId == 1001 => "ProblemWerReport",
+            var p when EventQuery.MatchesQuick("whea", p, eventId) => "ProblemWheaEvent",
+            var p when (p.Equals("Microsoft-Windows-Kernel-PnP", StringComparison.OrdinalIgnoreCase) || p.Equals("Kernel-PnP", StringComparison.OrdinalIgnoreCase)) && eventId == 219 => "ProblemDriverLoadFailure",
+            var p when (p.Equals("Microsoft-Windows-Kernel-PnP", StringComparison.OrdinalIgnoreCase) || p.Equals("Kernel-PnP", StringComparison.OrdinalIgnoreCase)) && eventId == 225 => "ProblemDeviceRemoval",
+            var p when (p.Equals("Microsoft-Windows-Kernel-PnP", StringComparison.OrdinalIgnoreCase) || p.Equals("Kernel-PnP", StringComparison.OrdinalIgnoreCase)) && eventId == 411 => "ProblemDeviceStartFailure",
+            var p when p.Equals("Service Control Manager", StringComparison.OrdinalIgnoreCase) && eventId is 7000 or 7001 or 7026 => "ProblemDriverLoadFailure",
+            var p when p.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase) && eventId == 19 => "ProblemUpdateSuccess",
+            var p when p.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase) && eventId is 20 or 25 or 31 => "ProblemUpdateFailure",
+            var p when p.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase) && eventId == 34 => "ProblemUpdateEvent",
+            var p when p.Equals("Microsoft-Windows-DNS-Client", StringComparison.OrdinalIgnoreCase) && eventId == 1014 => "ProblemDnsTimeout",
+            var p when p.Equals("Tcpip", StringComparison.OrdinalIgnoreCase) && eventId == 4201 => "ProblemNetworkEvent",
+            var p when EventQuery.MatchesQuick("network", p, eventId) => "ProblemNetworkEvent",
+            var p when EventQuery.MatchesQuick("usb", p, eventId) => "ProblemUsbEvent",
             _ => null
         };
 }
@@ -88,7 +109,24 @@ internal static class ProblemGrouping
             throw new InvalidOperationException("Problem grouping self-test failed.");
     }
 
-    private static string DetailsKey(EventRow row) => Regex.Replace(row.Details.Trim(), @"\s+", " ");
+    private static string DetailsKey(EventRow row)
+    {
+        var codes = Regex.Matches(row.Details, @"(?i)\b0x[\da-f]+\b").Select(match => match.Value)
+            .Concat(Regex.Matches(row.Details, @"(?i)\b(?:error|status|code|hresult)\s*[:=]?\s*(?<value>\d+)")
+                .Select(match => match.Groups["value"].Value))
+            .Select(code => code.ToUpperInvariant()).Distinct().Order().ToArray();
+        if (row.Provider.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase))
+            return string.Join('|', codes);
+
+        var value = Regex.Replace(row.Details.Trim(), @"\s+", " ");
+        value = Regex.Replace(value, @"(?i)\b[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\b", "<guid>");
+        value = Regex.Replace(value, @"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[ T]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?\b", "<time>");
+        value = Regex.Replace(value, @"(?i)\b(process|thread|record|sequence)\s*(?:id)?\s*[:=]?\s*\d+\b", "$1 <n>");
+        value = Regex.Replace(value, @"(?i)(?:[A-Z]:\\[^\r\n]*?\\(?:Temp|Tmp)\\|/tmp/)\S+", "<temp>");
+        value = Regex.Replace(value, @"(?i)0x[\da-f]+", "<code>");
+        value = Regex.Replace(value, @"\b\d+\b", "<n>");
+        return $"{value}|{string.Join('|', codes)}";
+    }
 
     private static string SeverityLabel(string level) => level switch
     {
