@@ -5,9 +5,13 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Xml;
+using System.Xml.Linq;
 using Microsoft.Win32;
 
 namespace EventFast;
+
+internal sealed record ParsedXmlNode(string Header, IReadOnlyList<ParsedXmlNode> Children, bool IsExpanded = false);
 
 public partial class MainWindow : Window, IDisposable
 {
@@ -20,6 +24,9 @@ public partial class MainWindow : Window, IDisposable
     private readonly string? _providerFilter;
     private string? _quickQuery;
     private string _selectedXml = "";
+    private EventRow? _selectedRow;
+    private string? _selectedMessage;
+    private int _detailsLoadVersion;
 
     internal MainWindow(StartupOptions? options = null)
     {
@@ -438,8 +445,13 @@ public partial class MainWindow : Window, IDisposable
 
     private void EventsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        _detailsLoadVersion++;
         DetailsBox.Text = "";
         _selectedXml = "";
+        _selectedRow = null;
+        _selectedMessage = null;
+        ParsedXmlStatus.Text = "";
+        ParsedXmlTree.ItemsSource = null;
         if (EventsGrid.SelectedItem is ProblemGroup group)
         {
             OccurrencesGrid.ItemsSource = group.Events;
@@ -472,23 +484,43 @@ public partial class MainWindow : Window, IDisposable
         if (EventsGrid.SelectedItem is not ProblemGroup group)
             return;
 
-        try
-        {
-            Process.Start(new ProcessStartInfo(BuildProblemSearchUri(group).AbsoluteUri) { UseShellExecute = true });
-        }
-        catch (Exception exception)
-        {
-            StatusText.Text = Localization.Format("BrowserFailed", exception.Message);
-        }
+        OpenSearch(BuildProblemSearchUri(group));
     }
 
-    internal static Uri BuildProblemSearchUri(ProblemGroup group)
+    private void SearchSelectedEventOnline_Click(object sender, RoutedEventArgs e)
     {
-        var query = $"{group.Problem} Event ID {group.EventId} {group.Provider} {Localization.Text("CauseSearchSuffix")}";
+        if (EventsGrid.SelectedItem is not ProblemGroup group)
+            return;
+
+        var row = _selectedRow ?? OccurrencesGrid.SelectedItem as EventRow ?? group.Events[^1];
+        OpenSearch(BuildEventSearchUri(row, ReferenceEquals(row, _selectedRow) ? _selectedMessage : row.Message ?? row.Details));
+    }
+
+    private void OpenSearch(Uri uri)
+    {
+        try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Exception exception) { StatusText.Text = Localization.Format("BrowserFailed", exception.Message); }
+    }
+
+    internal static Uri BuildProblemSearchUri(ProblemGroup group) =>
+        BuildEventSearchUri(group.Events[^1], $"{group.Problem} {group.Events[^1].Message ?? group.Events[^1].Details}");
+
+    internal static Uri BuildEventSearchUri(EventRow row, string? message)
+    {
+        var context = string.Join(' ', (message ?? "").Split((char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        // ponytail: search context is capped at 180 characters; widen it only if search quality proves insufficient.
+        if (context.Length > 180)
+            context = $"{context[..180]}…";
+        var query = string.Join(' ', new[]
+        {
+            row.Provider, $"Event ID {row.EventId}", row.DisplayLevel,
+            string.IsNullOrWhiteSpace(context) ? null : context, Localization.Text("CauseSearchSuffix")
+        }.OfType<string>());
         return new Uri($"https://www.google.com/search?q={Uri.EscapeDataString(query)}");
     }
 
-    private async void OccurrencesGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private async void OccurrencesGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (OccurrencesGrid.SelectedItem is EventRow row)
             await LoadSelectedDetailsAsync(row);
@@ -500,8 +532,13 @@ public partial class MainWindow : Window, IDisposable
             return;
 
         var row = selectedRow ?? group.Events[^1];
+        var request = ++_detailsLoadVersion;
+        _selectedRow = row;
+        _selectedMessage = row.Message ?? row.Details;
         DetailsTabs.SelectedIndex = 1;
         DetailsBox.Text = Localization.Text("LoadingDetails");
+        ParsedXmlStatus.Text = "";
+        ParsedXmlTree.ItemsSource = null;
         (string Message, string Xml) content;
         try
         {
@@ -513,14 +550,58 @@ public partial class MainWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            if (ReferenceEquals(EventsGrid.SelectedItem, group))
+            if (request == _detailsLoadVersion && ReferenceEquals(EventsGrid.SelectedItem, group))
                 DetailsBox.Text = $"{FormatSummary(group)}{Environment.NewLine}{Environment.NewLine}{Localization.Format("LoadDetailsFailed", exception.Message)}";
             return;
         }
-        if (!ReferenceEquals(EventsGrid.SelectedItem, group))
+        if (request != _detailsLoadVersion || !ReferenceEquals(EventsGrid.SelectedItem, group))
             return;
+        _selectedMessage = content.Message;
         _selectedXml = content.Xml;
         DetailsBox.Text = FormatDetails(group, row, content.Message, content.Xml);
+        UpdateParsedXml(content.Xml);
+    }
+
+    private void UpdateParsedXml(string xml)
+    {
+        try
+        {
+            ParsedXmlTree.ItemsSource = ParseXmlTree(xml);
+            ParsedXmlStatus.Text = "";
+        }
+        catch (Exception exception) when (exception is XmlException or InvalidDataException)
+        {
+            ParsedXmlTree.ItemsSource = null;
+            ParsedXmlStatus.Text = Localization.Format("ParseXmlFailed", exception.Message);
+        }
+    }
+
+    internal static IReadOnlyList<ParsedXmlNode> ParseXmlTree(string xml)
+    {
+        var root = XDocument.Parse(xml).Root ?? throw new InvalidDataException(Localization.Text("EmptyEventXml"));
+        return [ParseElement(root, true)];
+    }
+
+    private static ParsedXmlNode ParseElement(XElement element, bool expanded = false)
+    {
+        var children = element.Attributes().Select(attribute =>
+                new ParsedXmlNode($"@{attribute.Name.LocalName} = {DisplayXmlValue(attribute.Value)}", []))
+            .Concat(element.Elements().Select(child => ParseElement(child)))
+            .Concat(element.Nodes().OfType<XText>().Where(text => element.HasElements && !string.IsNullOrWhiteSpace(text.Value))
+                .Select(text => new ParsedXmlNode($"#text = {DisplayXmlValue(text.Value)}", [])))
+            .ToArray();
+        var value = !element.HasElements && !string.IsNullOrWhiteSpace(element.Value)
+            ? $" = {DisplayXmlValue(element.Value)}"
+            : "";
+        return new ParsedXmlNode($"{element.Name.LocalName}{value}", children, expanded);
+    }
+
+    private static string DisplayXmlValue(string value)
+    {
+        var display = string.Join(' ', value.Split((char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        // ponytail: tree labels stop at 500 characters; raw XML remains the full-value inspector.
+        return display.Length <= 500 ? display : $"{display[..500]}…";
     }
 
     internal static string FormatDetails(ProblemGroup group, EventRow row, string message, string xml)

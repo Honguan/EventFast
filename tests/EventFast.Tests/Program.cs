@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Xml;
 using System.Xml.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,6 +19,7 @@ var tests = new (string Name, Action Run)[]
     ("Grouping/classifier/sorting", TestGrouping),
     ("Problem summary", TestProblemSummary),
     ("Event details layout", TestEventDetailsLayout),
+    ("Parsed XML tree", TestParsedXmlTree),
     ("Problem search URL", TestProblemSearchUrl),
     ("Startup arguments", TestStartupArguments),
     ("Formatted message search", TestFormattedMessageSearch),
@@ -320,10 +322,25 @@ static void TestEventDetailsLayout()
 
 static void TestProblemSearchUrl()
 {
-    var row = Row(17, "A&B Provider", "payload");
+    var row = Row(17, "A&B Provider", "status 0xC0000005", level: "Warning") with { Xml = "<Event><Secret>do-not-send</Secret></Event>" };
     var uri = MainWindow.BuildProblemSearchUri(ProblemGrouping.Group([row])[0]);
+    var query = Uri.UnescapeDataString(uri.Query);
     Assert(uri.Scheme == Uri.UriSchemeHttps && uri.Host == "www.google.com" && uri.Query.Contains("%26") &&
-           Uri.UnescapeDataString(uri.Query).Contains("Event ID 17 A&B Provider Windows possible causes fix"));
+           query.Contains("A&B Provider") && query.Contains("Event ID 17") && query.Contains("Warning") &&
+           query.Contains("0xC0000005") && query.Contains("possible causes fix") && !query.Contains("do-not-send"));
+}
+
+static void TestParsedXmlTree()
+{
+    const string xml = "<Event xmlns='urn:test'><System><Provider Name='Example'/><EventID>17</EventID></System><EventData><Data Name='Status'>0xC0000005</Data></EventData></Event>";
+    var nodes = Flatten(MainWindow.ParseXmlTree(xml)).Select(node => node.Header).ToArray();
+    Assert(nodes.Contains("Event") && nodes.Contains("System") && nodes.Contains("Provider") &&
+           nodes.Contains("@Name = Example") && nodes.Contains("EventID = 17") && nodes.Contains("EventData") &&
+           nodes.Contains("Data = 0xC0000005") && nodes.Contains("@Name = Status"));
+    AssertThrows<XmlException>(() => MainWindow.ParseXmlTree("<Event>"));
+
+    static IEnumerable<ParsedXmlNode> Flatten(IEnumerable<ParsedXmlNode> source) =>
+        source.SelectMany(node => new[] { node }.Concat(Flatten(node.Children)));
 }
 
 static void TestCancelledExport()
