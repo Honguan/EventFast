@@ -113,12 +113,12 @@ internal static class XlsxExporter
         var path = Path.Combine(Path.GetTempPath(), $"EventFast-{Guid.NewGuid():N}.xlsx");
         try
         {
-            var row = new EventRow(DateTime.Now, "錯誤", 41, "Microsoft-Windows-Kernel-Power", "System", 1, "PC", "測試", "<Event />");
+            var row = new EventRow(DateTime.Now, "Error", 41, "Microsoft-Windows-Kernel-Power", "System", 1, "PC", "test", "<Event />");
             Export(path, ProblemGrouping.Group([row]), [row]);
             using var archive = ZipFile.OpenRead(path);
             var sheet = archive.GetEntry("xl/worksheets/sheet1.xml");
             if (archive.GetEntry("xl/workbook.xml") is null || archive.GetEntry("xl/worksheets/sheet2.xml") is null ||
-                sheet is null || !XDocument.Load(sheet.Open()).ToString().Contains("非正常關機"))
+                sheet is null || !XDocument.Load(sheet.Open()).ToString().Contains(ProblemClassifier.Classify(row)))
                 throw new InvalidOperationException("XLSX export self-test failed.");
         }
         finally

@@ -19,7 +19,10 @@ internal sealed record EventRow(
     string Details,
     string Xml,
     string? LogFilePath = null,
-    string? Message = null);
+    string? Message = null)
+{
+    public string DisplayLevel => Localization.Level(Level);
+}
 
 internal static class WindowsEventReader
 {
@@ -129,7 +132,7 @@ internal static class WindowsEventReader
     }
 
     private static InvalidOperationException ResultLimit(int maximumRows) =>
-        new($"查詢結果超過 {maximumRows:N0} 筆，請縮短時間或增加篩選條件。");
+        new(Localization.Format("ResultLimit", maximumRows));
 
     internal static string ReadMessage(EventRow row)
     {
@@ -244,7 +247,7 @@ internal static class WindowsEventReader
 
     private static EventRow AddDetails(EventRow row, string xml)
     {
-        var root = XDocument.Parse(xml).Root ?? throw new InvalidDataException("事件 XML 為空。 ");
+        var root = XDocument.Parse(xml).Root ?? throw new InvalidDataException(Localization.Text("EmptyEventXml"));
         var details = string.Join(Environment.NewLine,
             root.Descendants().Where(element => !element.HasElements &&
                     element.Ancestors().Any(ancestor => ancestor.Name.LocalName is "EventData" or "UserData"))
@@ -281,7 +284,7 @@ internal static class WindowsEventReader
         internal SystemRenderer()
         {
             if (IntPtr.Size != 8 || Marshal.SizeOf<EvtVariant>() != 16)
-                throw new PlatformNotSupportedException("EventFast Native renderer 僅支援 Windows x64。");
+                throw new PlatformNotSupportedException(Localization.Text("WindowsX64Only"));
             _context = EvtCreateRenderContext(0, IntPtr.Zero, EvtRenderContextSystem);
             if (_context.IsInvalid)
                 throw NativeError("system render context");
@@ -300,13 +303,13 @@ internal static class WindowsEventReader
             }
 
             if (count < PropertyCount || used < checked(count * 16))
-                throw new InvalidDataException($"事件 System 欄位 buffer 無效：{count} 欄／{used} bytes。");
+                throw new InvalidDataException(Localization.Format("InvalidSystemBuffer", count, used));
 
             var time = Value(8, TypeFileTime);
             var level = Number(4, TypeByte);
             return new EventRow(
                 time.Type == TypeNull ? DateTime.MinValue : DateTime.FromFileTimeUtc(checked((long)time.UInt64)).ToLocalTime(),
-                level switch { 1 => "嚴重", 2 => "錯誤", 3 => "警告", 4 => "資訊", 5 => "詳細", _ => "未知" },
+                level switch { 1 => "Critical", 2 => "Error", 3 => "Warning", 4 => "Information", 5 => "Verbose", _ => "Unknown" },
                 checked((int)Number(2, TypeUInt16)),
                 Text(0),
                 Text(14),
@@ -322,7 +325,7 @@ internal static class WindowsEventReader
             var value = Marshal.PtrToStructure<EvtVariant>(IntPtr.Add(_buffer, index * 16));
             var type = value.Type & TypeMask;
             if ((value.Type & TypeArray) != 0 || type is not TypeNull && type != expectedType)
-                throw new InvalidDataException($"事件 System 欄位 {index} 類型錯誤：預期 {expectedType}，實際 {type}。");
+                throw new InvalidDataException(Localization.Format("InvalidSystemType", index, expectedType, type));
             value.Type = type;
             return value;
         }
@@ -335,7 +338,7 @@ internal static class WindowsEventReader
                 TypeByte => value.Byte,
                 TypeUInt16 => value.UInt16,
                 TypeUInt64 => value.UInt64,
-                _ => throw new InvalidOperationException($"不支援的數值類型：{expectedType}。")
+                _ => throw new InvalidOperationException(Localization.Format("UnsupportedValueType", expectedType))
             };
         }
 
@@ -418,7 +421,7 @@ internal static class WindowsEventReader
             if (count == 0)
                 return "";
             if (used < checked(count * 16))
-                throw new InvalidDataException($"事件 EventData buffer 無效：{count} 欄／{used} bytes。");
+                throw new InvalidDataException(Localization.Format("InvalidEventDataBuffer", count, used));
 
             var values = new List<string>(count);
             for (var index = 0; index < count; index++)
@@ -543,9 +546,9 @@ internal static class WindowsEventReader
         var error = code ?? Marshal.GetLastWin32Error();
         return error switch
         {
-            5 => new UnauthorizedAccessException($"權限不足，無法讀取 {target} 事件記錄。"),
-            15007 => new InvalidOperationException($"這台電腦沒有 {target} 事件通道。"),
-            _ => new Win32Exception(error, $"讀取 {target} 事件記錄失敗。")
+            5 => new UnauthorizedAccessException(Localization.Format("AccessDenied", target)),
+            15007 => new InvalidOperationException(Localization.Format("MissingChannel", target)),
+            _ => new Win32Exception(error, Localization.Format("ReadFailed", target))
         };
     }
 
