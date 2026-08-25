@@ -8,28 +8,29 @@ internal sealed record QueryCriteria(
     int? EventId,
     string? Keyword,
     IReadOnlyList<string>? Providers = null,
-    IReadOnlyList<int>? EventIds = null,
+    IReadOnlyList<QuickRule>? Rules = null,
     DateTime? From = null,
     DateTime? To = null);
 
-internal sealed record QuickQuery(string Name, string[] Providers, int[] EventIds, string[]? Channels = null);
+internal sealed record QuickRule(string Provider, int[] EventIds);
+internal sealed record QuickQuery(string Name, QuickRule[] Rules, string[]? Channels = null);
 
 internal static class EventQuery
 {
     internal static readonly IReadOnlyDictionary<string, QuickQuery> QuickQueries = new Dictionary<string, QuickQuery>
     {
-        ["all"] = new("QuickAll", [], []),
-        ["system"] = new("QuickSystem", [], [], ["System"]),
-        ["crash"] = new("QuickCrash", ["Application Error", ".NET Runtime", "Windows Error Reporting"], [1000, 1001, 1026], ["Application"]),
-        ["disk"] = new("QuickDisk", ["disk", "storahci", "stornvme", "storport", "Ntfs", "Microsoft-Windows-Ntfs", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 55, 98, 129, 140, 153, 157], ["System"]),
-        ["ntfs"] = new("QuickNtfs", ["Ntfs", "Microsoft-Windows-Ntfs"], [55, 98, 140], ["System"]),
-        ["usb"] = new("QuickUsb", ["USBHUB", "USBXHCI", "Microsoft-Windows-USB-USBHUB3", "Microsoft-Windows-USB-USBXHCI", "UCSI", "UcmUcsiCx", "Microsoft-Windows-DriverFrameworks-UserMode"], [10110, 10111], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
-        ["device"] = new("QuickDevice", ["Microsoft-Windows-Kernel-PnP", "Kernel-PnP"], [219, 225, 411], ["System", "Microsoft-Windows-Kernel-PnP/Configuration"]),
-        ["driver"] = new("QuickDriver", ["Microsoft-Windows-Kernel-PnP", "Service Control Manager"], [219, 7000, 7001, 7026], ["System"]),
-        ["whea"] = new("QuickWhea", ["Microsoft-Windows-WHEA-Logger", "WHEA-Logger"], [1, 17, 18, 19, 20, 46, 47], ["System"]),
-        ["network"] = new("QuickNetwork", ["Tcpip", "Microsoft-Windows-DNS-Client", "Microsoft-Windows-NetworkProfile"], [4201, 1014, 10000, 10001], ["System", "Microsoft-Windows-WLAN-AutoConfig/Operational"]),
-        ["update"] = new("QuickUpdate", ["Microsoft-Windows-WindowsUpdateClient"], [19, 20, 25, 31, 34], ["System", "Microsoft-Windows-WindowsUpdateClient/Operational"]),
-        ["power"] = new("QuickPower", ["Microsoft-Windows-Kernel-Power", "EventLog"], [41, 6008], ["System"])
+        ["all"] = new("QuickAll", []),
+        ["system"] = new("QuickSystem", [], ["System"]),
+        ["crash"] = new("QuickCrash", [new("Application Error", [1000, 1001]), new(".NET Runtime", [1026]), new("Windows Error Reporting", [1001])], ["Application"]),
+        ["disk"] = new("QuickDisk", [new("disk", [7, 11, 51, 153, 157]), new("storahci", [129]), new("stornvme", [129]), new("storport", [129]), new("Ntfs", [55, 98, 140]), new("Microsoft-Windows-Ntfs", [55, 98, 140]), new("volmgr", []), new("volsnap", []), new("partmgr", []), new("Microsoft-Windows-Kernel-Storage", [])], ["System"]),
+        ["ntfs"] = new("QuickNtfs", [new("Ntfs", [55, 98, 140]), new("Microsoft-Windows-Ntfs", [55, 98, 140])], ["System"]),
+        ["usb"] = new("QuickUsb", [new("USBHUB", []), new("USBXHCI", []), new("Microsoft-Windows-USB-USBHUB3", []), new("Microsoft-Windows-USB-USBXHCI", []), new("UCSI", []), new("UcmUcsiCx", []), new("Microsoft-Windows-DriverFrameworks-UserMode", [10110, 10111])], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
+        ["device"] = new("QuickDevice", [new("Microsoft-Windows-Kernel-PnP", [219, 225, 411]), new("Kernel-PnP", [219, 225, 411])], ["System", "Microsoft-Windows-Kernel-PnP/Configuration"]),
+        ["driver"] = new("QuickDriver", [new("Microsoft-Windows-Kernel-PnP", [219]), new("Service Control Manager", [7000, 7001, 7026])], ["System"]),
+        ["whea"] = new("QuickWhea", [new("Microsoft-Windows-WHEA-Logger", [1, 17, 18, 19, 20, 46, 47]), new("WHEA-Logger", [1, 17, 18, 19, 20, 46, 47])], ["System"]),
+        ["network"] = new("QuickNetwork", [new("Tcpip", [4201]), new("Microsoft-Windows-DNS-Client", [1014]), new("Microsoft-Windows-NetworkProfile", [10000, 10001]), new("Microsoft-Windows-WLAN-AutoConfig", [])], ["System", "Microsoft-Windows-WLAN-AutoConfig/Operational"]),
+        ["update"] = new("QuickUpdate", [new("Microsoft-Windows-WindowsUpdateClient", [19, 20, 25, 31, 34])], ["System", "Microsoft-Windows-WindowsUpdateClient/Operational"]),
+        ["power"] = new("QuickPower", [new("Microsoft-Windows-Kernel-Power", [41]), new("EventLog", [6008])], ["System"])
     };
 
     internal static QueryCriteria Parse(string search, int maximumLevel, TimeSpan period, string? provider = null)
@@ -42,7 +43,7 @@ internal static class EventQuery
     }
 
     internal static QueryCriteria FromQuick(QuickQuery query, int maximumLevel, TimeSpan period) =>
-        new(maximumLevel, period, null, null, query.Providers, query.EventIds);
+        new(maximumLevel, period, null, null, Rules: query.Rules);
 
     internal static string BuildXPath(QueryCriteria criteria)
     {
@@ -60,10 +61,10 @@ internal static class EventQuery
         if (criteria.EventId is int id)
             conditions.Add($"EventID={id}");
 
-        var quick = (criteria.EventIds ?? []).Select(id => $"EventID={id}")
-            .Concat((criteria.Providers ?? []).Select(provider => $"Provider[@Name={Quote(provider)}]")).ToArray();
-        if (quick.Length > 0)
-            conditions.Add($"({string.Join(" or ", quick)})");
+        if (criteria.Providers is { Count: > 0 })
+            conditions.Add($"({string.Join(" or ", criteria.Providers.Select(provider => $"Provider[@Name={Quote(provider)}]"))})");
+        if (criteria.Rules is { Count: > 0 })
+            conditions.Add($"({string.Join(" or ", criteria.Rules.Select(RuleXPath))})");
 
         return conditions.Count == 0 ? "*" : $"*[System[{string.Join(" and ", conditions)}]]";
     }
@@ -79,11 +80,28 @@ internal static class EventQuery
                 !ProblemClassifier.SearchText(row).Contains(word, StringComparison.OrdinalIgnoreCase)))
             return false;
 
-        if ((criteria.Providers?.Count ?? 0) + (criteria.EventIds?.Count ?? 0) == 0)
-            return true;
+        if (criteria.Providers is { Count: > 0 } && !criteria.Providers.Contains(row.Provider, StringComparer.OrdinalIgnoreCase))
+            return false;
 
-        return (criteria.EventIds?.Contains(row.EventId) ?? false) ||
-               (criteria.Providers?.Contains(row.Provider, StringComparer.OrdinalIgnoreCase) ?? false);
+        return criteria.Rules is not { Count: > 0 } || criteria.Rules.Any(rule => RuleMatches(row, rule));
+    }
+
+    private static bool RuleMatches(EventRow row, QuickRule rule) =>
+        RuleMatches(row.Provider, row.EventId, rule);
+
+    internal static bool MatchesQuick(string name, string provider, int eventId) =>
+        QuickQueries[name].Rules.Any(rule => RuleMatches(provider, eventId, rule));
+
+    private static bool RuleMatches(string provider, int eventId, QuickRule rule) =>
+        provider.Equals(rule.Provider, StringComparison.OrdinalIgnoreCase) &&
+        (rule.EventIds.Length == 0 || rule.EventIds.Contains(eventId));
+
+    private static string RuleXPath(QuickRule rule)
+    {
+        var provider = $"Provider[@Name={Quote(rule.Provider)}]";
+        return rule.EventIds.Length == 0
+            ? provider
+            : $"({provider} and ({string.Join(" or ", rule.EventIds.Select(id => $"EventID={id}"))}))";
     }
 
     private static string Quote(string value)
@@ -105,7 +123,7 @@ internal static class EventQuery
             throw new InvalidOperationException("Mixed query self-test failed.");
 
         var quick = FromQuick(QuickQueries["power"], 2, TimeSpan.FromHours(1));
-        if (!BuildXPath(quick).Contains("EventID=41") || !Matches(new(DateTime.Now, "Error", 41, "x", "System", 1, "", "", ""), quick))
+        if (!BuildXPath(quick).Contains("EventID=41") || !Matches(new(DateTime.Now, "Error", 41, "Microsoft-Windows-Kernel-Power", "System", 1, "", "", ""), quick))
             throw new InvalidOperationException("Quick query self-test failed.");
 
         var custom = mixed with { From = new DateTime(2026, 1, 1), To = new DateTime(2026, 1, 2) };
