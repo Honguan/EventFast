@@ -230,13 +230,14 @@ static void TestGrouping()
     var now = DateTime.Now;
     var groups = ProblemGrouping.Group([
         Row(153, "disk", "Retry sector 123", now.AddMinutes(-2), "警告"),
+        Row(153, "disk", "Retry sector 123", now, "錯誤"),
         Row(153, "disk", "Retry sector 456", now, "錯誤"),
         Row(1000, "Application Error", "App failed", now, "錯誤"),
-        Row(2, "Provider", "Failure 01234567-89ab-cdef-0123-456789abcdef at 0xabcdef12", now, "錯誤"),
-        Row(2, "Provider", "Failure fedcba98-7654-3210-fedc-ba9876543210 at 0x12345678", now, "錯誤")
+        Row(2, "Provider", "Failure\nDevice 01234567-89ab-cdef-0123-456789abcdef status 0xabcdef12", now, "錯誤"),
+        Row(2, "Provider", "Failure\nDevice fedcba98-7654-3210-fedc-ba9876543210 status 0x12345678", now, "錯誤")
     ]);
-    Assert(groups.Count == 3 && groups.Any(group => group.Problem == "磁碟 I/O 重試" && group.Count == 2 && group.Severity == "錯誤") &&
-           groups.Any(group => group.Provider == "Provider" && group.Count == 2));
+    Assert(groups.Count == 5 && groups.Any(group => group.Problem == "磁碟 I/O 重試" && group.Count == 2 && group.Severity == "錯誤") &&
+           groups.Count(group => group.Provider == "disk") == 2 && groups.Count(group => group.Provider == "Provider") == 2);
 }
 
 static void TestStartupArguments()
@@ -458,7 +459,7 @@ static void TestUiQueryCompletion()
             var sampleRows = new[]
             {
                 Row(153, "disk", "Retry sector 1"),
-                Row(153, "disk", "Retry sector 2")
+                Row(153, "disk", "Retry sector 1")
             };
             var sampleGroup = ProblemGrouping.Group(sampleRows)[0];
             eventsGrid.ItemsSource = new[] { sampleGroup };

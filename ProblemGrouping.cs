@@ -65,7 +65,7 @@ internal static class ProblemGrouping
         var rows = new[]
         {
             new EventRow(now.AddMinutes(-2), "錯誤", 41, "Microsoft-Windows-Kernel-Power", "System", 1, "PC", "Unexpected 123", ""),
-            new EventRow(now, "嚴重", 41, "Microsoft-Windows-Kernel-Power", "System", 2, "PC", "Unexpected 456", ""),
+            new EventRow(now, "嚴重", 41, "Microsoft-Windows-Kernel-Power", "System", 2, "PC", "Unexpected 123", ""),
             new EventRow(now, "錯誤", 1000, "Application Error", "Application", 3, "PC", "App failed", "")
         };
 
@@ -74,14 +74,7 @@ internal static class ProblemGrouping
             throw new InvalidOperationException("Problem grouping self-test failed.");
     }
 
-    private static string DetailsKey(EventRow row)
-    {
-        var firstLine = row.Details
-            .Split('\r', '\n')
-            .Select(line => line.Trim())
-            .FirstOrDefault(line => line.Length > 0) ?? "";
-        return Regex.Replace(Regex.Replace(firstLine, @"\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b|\b0x[0-9a-fA-F]+\b|\d+", "#"), @"\s+", " ");
-    }
+    private static string DetailsKey(EventRow row) => Regex.Replace(row.Details.Trim(), @"\s+", " ");
 
     private static string SeverityLabel(string level) => level switch
     {
