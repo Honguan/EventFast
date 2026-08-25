@@ -1,5 +1,7 @@
 # EventFast
 
+<img src="Assets/EventFast-logo.png" alt="EventFast logo" width="160">
+
 EventFast 是可攜式 Windows Event Log 查詢工具，直接讀取 Windows 原生事件 API，集中查詢、分組、檢視並匯出 System、Application 與離線 `.evtx`。
 
 ## 下載與需求

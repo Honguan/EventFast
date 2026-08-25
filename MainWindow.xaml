@@ -1,7 +1,7 @@
 <Window x:Class="EventFast.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="EventFast" Height="760" Width="1180" MinHeight="560" MinWidth="820"
+        Title="EventFast" Icon="Assets/EventFast.ico" Height="760" Width="1180" MinHeight="560" MinWidth="820"
         Background="#F4F6F8" PreviewKeyDown="Window_PreviewKeyDown" AllowDrop="True" Drop="Window_Drop">
     <Grid Margin="16">
         <Grid.RowDefinitions>
