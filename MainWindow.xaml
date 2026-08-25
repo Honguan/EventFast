@@ -119,7 +119,7 @@
                     <DataGrid x:Name="OccurrencesGrid" IsReadOnly="True" AutoGenerateColumns="False"
                               EnableRowVirtualization="True" EnableColumnVirtualization="True"
                               VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                              MouseDoubleClick="OccurrencesGrid_MouseDoubleClick">
+                              SelectionChanged="OccurrencesGrid_SelectionChanged">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{local:Loc ColumnTime}" Binding="{Binding Time}" Width="160" />
                             <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding DisplayLevel}" Width="90" />
@@ -136,12 +136,46 @@
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button Content="{local:Loc CopyProblem}" Click="CopyProblem_Click" Margin="0,0,6,0" Padding="10,4" />
                             <Button Content="{local:Loc CopyFull}" Click="CopyFull_Click" Margin="0,0,6,0" Padding="10,4" />
-                            <Button Content="{local:Loc CopyXml}" Click="CopyXml_Click" Padding="10,4" />
+                            <Button Content="{local:Loc SearchPossibleCauses}" Click="SearchSelectedEventOnline_Click" Padding="10,4" />
                         </StackPanel>
-                        <TextBox x:Name="DetailsBox" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
-                                 Padding="12" FontFamily="Microsoft JhengHei UI" FontSize="14" TextBlock.LineHeight="22"
-                                 Background="White" BorderBrush="#C7D2DE"
-                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3*" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="2*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="DetailsBox" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                     Padding="12" FontFamily="Microsoft JhengHei UI" FontSize="14" TextBlock.LineHeight="22"
+                                     Background="White" BorderBrush="#C7D2DE"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="#DCE3EA" />
+                            <GroupBox Grid.Column="2" Header="{local:Loc ParsedXml}" Margin="8,0,0,0">
+                                <Grid Margin="6">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Button Content="{local:Loc CopyXml}" Click="CopyXml_Click" Padding="10,4"
+                                            HorizontalAlignment="Left" Margin="0,0,0,6" />
+                                    <TextBlock x:Name="ParsedXmlStatus" Grid.Row="1" TextWrapping="Wrap" Foreground="#A1260D" Margin="0,0,0,6" />
+                                    <TreeView x:Name="ParsedXmlTree" Grid.Row="2"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                              ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                        <TreeView.ItemTemplate>
+                                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                                <TextBlock Text="{Binding Header}" />
+                                            </HierarchicalDataTemplate>
+                                        </TreeView.ItemTemplate>
+                                        <TreeView.ItemContainerStyle>
+                                            <Style TargetType="TreeViewItem">
+                                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=OneWay}" />
+                                            </Style>
+                                        </TreeView.ItemContainerStyle>
+                                    </TreeView>
+                                </Grid>
+                            </GroupBox>
+                        </Grid>
                     </Grid>
                 </TabItem>
             </TabControl>
