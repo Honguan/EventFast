@@ -13,7 +13,7 @@ internal static class XlsxExporter
     private const string Relationships = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
     internal static void Export(string path, IReadOnlyList<ProblemGroup> groups, IEnumerable<EventRow> events,
-        bool includeXml = false, Func<EventRow, string>? messageFactory = null, Func<EventRow, string>? xmlFactory = null,
+        bool includeXml = false, Func<EventRow, (string Message, string Xml)>? contentFactory = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -35,9 +35,7 @@ internal static class XlsxExporter
                     includeXml
                         ? ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message", "XML"]
                         : ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message"],
-                    events.Select(row => includeXml
-                        ? new object?[] { row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row), (xmlFactory ?? DefaultXml)(row) }
-                        : [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, (messageFactory ?? DefaultMessage)(row)]), cancellationToken);
+                    events.Select(row => ExportValues(row, includeXml, contentFactory)), cancellationToken);
             }
             File.Move(temporaryPath, path, true);
         }
@@ -47,8 +45,13 @@ internal static class XlsxExporter
         }
     }
 
-    private static string DefaultMessage(EventRow row) => row.Details;
-    private static string DefaultXml(EventRow row) => row.Xml;
+    private static object?[] ExportValues(EventRow row, bool includeXml, Func<EventRow, (string Message, string Xml)>? contentFactory)
+    {
+        var content = contentFactory?.Invoke(row) ?? (row.Message ?? row.Details, row.Xml);
+        return includeXml
+            ? [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, content.Message, content.Xml]
+            : [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, content.Message];
+    }
 
     private static void WriteSheet(ZipArchive archive, string name, string[] headers, IEnumerable<object?[]> rows, CancellationToken cancellationToken)
     {

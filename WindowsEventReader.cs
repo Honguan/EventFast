@@ -18,7 +18,8 @@ internal sealed record EventRow(
     string Computer,
     string Details,
     string Xml,
-    string? LogFilePath = null);
+    string? LogFilePath = null,
+    string? Message = null);
 
 internal static class WindowsEventReader
 {
@@ -140,6 +141,9 @@ internal static class WindowsEventReader
 
     internal static string ReadXml(EventRow row)
     {
+        if (row.Xml.Length > 0)
+            return row.Xml;
+
         var xpath = $"*[System[EventRecordID={row.RecordId}]]";
         using var query = EvtQuery(IntPtr.Zero, row.LogFilePath ?? row.Channel, xpath,
             row.LogFilePath is null ? EvtQueryChannelPath : EvtQueryFilePath);
@@ -158,19 +162,24 @@ internal static class WindowsEventReader
     {
         private readonly Dictionary<(string Provider, string? File), EventHandle> _metadata = [];
 
-        internal string Format(EventRow row)
+        internal string Format(EventRow row) => ReadContent(row, includeXml: false).Message;
+
+        internal (string Message, string Xml) ReadContent(EventRow row, bool includeXml)
         {
+            if (row.Message is not null && (!includeXml || row.Xml.Length > 0))
+                return (row.Message, row.Xml);
+
             var xpath = $"*[System[EventRecordID={row.RecordId}]]";
             using var query = EvtQuery(IntPtr.Zero, row.LogFilePath ?? row.Channel, xpath, row.LogFilePath is null ? EvtQueryChannelPath : EvtQueryFilePath);
             if (query.IsInvalid)
-                return row.Details;
+                return (row.Message ?? row.Details, row.Xml);
 
             var events = new IntPtr[1];
             if (!EvtNext(query, 1, events, 0, 0, out var returned) || returned == 0)
-                return row.Details;
+                return (row.Message ?? row.Details, row.Xml);
 
             using var handle = new EventHandle(events[0]);
-            return Format(handle, row);
+            return (row.Message ?? Format(handle, row), includeXml && row.Xml.Length == 0 ? RenderXml(handle) : row.Xml);
         }
 
         internal string Format(EventHandle handle, EventRow row)
@@ -244,9 +253,14 @@ internal static class WindowsEventReader
     }
 
     private static EventRow AddMessage(EventRow row, string message) =>
-        string.IsNullOrWhiteSpace(message) || row.Details.Contains(message, StringComparison.Ordinal)
+        string.IsNullOrWhiteSpace(message)
             ? row
-            : row with { Details = string.IsNullOrWhiteSpace(row.Details) ? message : $"{row.Details}{Environment.NewLine}{message}" };
+            : row with
+            {
+                Message = message,
+                Details = row.Details.Contains(message, StringComparison.Ordinal) ? row.Details :
+                    string.IsNullOrWhiteSpace(row.Details) ? message : $"{row.Details}{Environment.NewLine}{message}"
+            };
 
     private sealed class SystemRenderer : IDisposable
     {

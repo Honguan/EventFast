@@ -235,7 +235,7 @@ public partial class MainWindow : Window, IDisposable
             await Task.Run(() =>
             {
                 using var formatter = WindowsEventReader.CreateMessageFormatter();
-                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, formatter.Format, WindowsEventReader.ReadXml, operation.Token);
+                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, row => formatter.ReadContent(row, includeXml), operation.Token);
             }, operation.Token);
             StatusText.Text = $"已匯出 {Path.GetFileName(dialog.FileName)}";
         }
@@ -439,7 +439,11 @@ public partial class MainWindow : Window, IDisposable
         (string Message, string Xml) content;
         try
         {
-            content = await Task.Run(() => (WindowsEventReader.ReadMessage(row), WindowsEventReader.ReadXml(row)));
+            content = await Task.Run(() =>
+            {
+                using var formatter = WindowsEventReader.CreateMessageFormatter();
+                return formatter.ReadContent(row, includeXml: true);
+            });
         }
         catch (Exception exception)
         {
