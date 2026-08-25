@@ -42,7 +42,7 @@ if (args.Contains("--integration"))
             {
                 firstBatchSeen = true;
                 cancellation.Cancel();
-            }));
+            }, includeMessage: true));
         Assert(firstBatchSeen);
     }
     Console.WriteLine("PASS In-flight native query cancellation");
@@ -81,7 +81,13 @@ if (args.Contains("--integration"))
             Assert(maximumLevel == 0 || byLevel.Count > 0 &&
                 byLevel.All(row => LevelNumber(row.Level) is var level && level > 0 && level <= maximumLevel));
 
-            WindowsEventReader.ReadMessage(rows[0]);
+            var expectedMessage = WindowsEventReader.ReadMessage(sample);
+            IReadOnlyList<EventRow>? messageBatch = null;
+            var withMessages = WindowsEventReader.Read(channel, $"*[System[EventRecordID={sample.RecordId}]]", CancellationToken.None, 1,
+                firstBatch: batch => messageBatch = batch, includeMessage: true);
+            Assert(withMessages.Count == 1 && withMessages[0].RecordId == sample.RecordId &&
+                   (string.IsNullOrWhiteSpace(expectedMessage) || withMessages[0].Details.Contains(expectedMessage, StringComparison.Ordinal)) &&
+                   messageBatch!.Select(row => row.Details).SequenceEqual(withMessages.Select(row => row.Details)));
             foreach (var row in rows)
             {
                 var xml = WindowsEventReader.ReadXml(row);
@@ -295,7 +301,7 @@ static void TestCancelledExport()
 static void TestFormattedMessageSearch()
 {
     var row = Row(1000, "Application Error", "payload without product name");
-    var enriched = MainWindow.AddMessages([row], _ => "NVIDIA process crashed")[0];
+    var enriched = row with { Details = $"{row.Details}{Environment.NewLine}NVIDIA process crashed" };
     Assert(EventQuery.Matches(enriched, EventQuery.Parse("NVIDIA crash", 3, TimeSpan.FromDays(1))));
 }
 

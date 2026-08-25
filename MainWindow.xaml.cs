@@ -99,8 +99,7 @@ public partial class MainWindow : Window, IDisposable
             var previewRows = new List<EventRow>();
             void ShowFirstBatch(IReadOnlyList<EventRow> batch)
             {
-                var searchable = criteria.Keyword is null ? batch : AddMessages(batch, token);
-                var filtered = searchable.Where(row => EventQuery.Matches(row, criteria)).ToArray();
+                var filtered = batch.Where(row => EventQuery.Matches(row, criteria)).ToArray();
                 Dispatcher.BeginInvoke(() =>
                 {
                     if (token.IsCancellationRequested)
@@ -115,10 +114,10 @@ public partial class MainWindow : Window, IDisposable
                 try
                 {
                     var key = $"{channel}\n{xpath}";
-                    var rawRows = _cache.GetOrAdd(key,
+                    var cacheKey = criteria.Keyword is null ? key : $"{key}\nmessages";
+                    var rows = _cache.GetOrAdd(cacheKey,
                         () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch,
-                            filePath: _eventFile is not null, failIfTruncated: true), refresh);
-                    var rows = criteria.Keyword is null ? rawRows : _cache.GetOrAdd($"{key}\nmessages", () => AddMessages(rawRows, token), refresh);
+                            filePath: _eventFile is not null, failIfTruncated: true, includeMessage: criteria.Keyword is not null), refresh);
                     return (Rows: rows, Error: (string?)null, RequiresAdmin: false);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
@@ -473,32 +472,6 @@ public partial class MainWindow : Window, IDisposable
             $"Record ID：{row.RecordId}{line}{line}" +
             $"【事件訊息】{line}{message.Trim()}{line}{line}" +
             $"【原始 XML】{line}{xml.Trim()}";
-    }
-
-    internal static IReadOnlyList<EventRow> AddMessages(IReadOnlyList<EventRow> rows, CancellationToken cancellationToken = default)
-    {
-        var result = new EventRow[rows.Count];
-        Parallel.For(0, rows.Count,
-            new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) },
-            WindowsEventReader.CreateMessageFormatter,
-            (index, _, formatter) =>
-            {
-                result[index] = AddMessage(rows[index], formatter.Format);
-                return formatter;
-            },
-            formatter => formatter.Dispose());
-        return result;
-    }
-
-    internal static IReadOnlyList<EventRow> AddMessages(IReadOnlyList<EventRow> rows, Func<EventRow, string> format) =>
-        rows.Select(row => AddMessage(row, format)).ToArray();
-
-    private static EventRow AddMessage(EventRow row, Func<EventRow, string> format)
-    {
-        var message = format(row);
-        return string.IsNullOrWhiteSpace(message) || row.Details.Contains(message, StringComparison.Ordinal)
-            ? row
-            : row with { Details = string.IsNullOrWhiteSpace(row.Details) ? message : $"{row.Details}{Environment.NewLine}{message}" };
     }
 
     private void CopyProblem_Click(object sender, RoutedEventArgs e)
