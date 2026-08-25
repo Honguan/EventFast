@@ -244,6 +244,10 @@ static void TestStartupArguments()
 {
     var options = StartupOptions.Parse(["--hours", "24", "--event-id", "51", "--provider", "disk", "--query", "retry"]);
     Assert(options.Hours == 24 && options.EventId == 51 && options.Provider == "disk" && options.Query == "retry" && options.AutoRun);
+    var criteria = EventQuery.Parse($"{options.Query} {options.EventId}", 3, TimeSpan.FromHours(options.Hours!.Value), options.Provider);
+    Assert(criteria.Keyword == "retry" && criteria.EventId == 51 && criteria.Providers!.SequenceEqual(["disk"]) &&
+           EventQuery.BuildXPath(criteria).Contains("Provider[@Name='disk']") &&
+           EventQuery.Matches(Row(51, "disk", "retry"), criteria) && !EventQuery.Matches(Row(51, "storport", "retry disk"), criteria));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--today", "--hours", "1"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--event-id", "65536"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--query", "--today"]));

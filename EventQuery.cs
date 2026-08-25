@@ -32,13 +32,13 @@ internal static class EventQuery
         ["power"] = new("電源 / 異常關機", ["Microsoft-Windows-Kernel-Power", "EventLog"], [41, 6008], ["System"])
     };
 
-    internal static QueryCriteria Parse(string search, int maximumLevel, TimeSpan period)
+    internal static QueryCriteria Parse(string search, int maximumLevel, TimeSpan period, string? provider = null)
     {
         var tokens = search.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var numbers = tokens.Where(token => int.TryParse(token, out _)).Select(int.Parse).ToArray();
         var words = tokens.Where(token => !int.TryParse(token, out _)).ToArray();
         return new(maximumLevel, period, numbers.Length > 0 ? numbers[0] : null,
-            words.Length == 0 ? null : string.Join(' ', words));
+            words.Length == 0 ? null : string.Join(' ', words), provider is null ? null : [provider]);
     }
 
     internal static QueryCriteria FromQuick(QuickQuery query, int maximumLevel, TimeSpan period) =>
