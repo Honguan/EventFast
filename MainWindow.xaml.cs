@@ -27,6 +27,9 @@ public partial class MainWindow : Window, IDisposable
     private EventRow? _selectedRow;
     private string? _selectedMessage;
     private int _detailsLoadVersion;
+    private ComboBoxItem? _customHoursItem;
+    private bool _changingLanguage;
+    private Func<string>? _operationStatus;
 
     internal MainWindow(StartupOptions? options = null)
     {
@@ -55,7 +58,7 @@ public partial class MainWindow : Window, IDisposable
             var item = TimeBox.Items.OfType<ComboBoxItem>().FirstOrDefault(candidate => candidate.Tag.ToString() == tag);
             if (item is null)
             {
-                item = new ComboBoxItem { Tag = tag, Content = Localization.Format("LastHours", hours) };
+                item = _customHoursItem = new ComboBoxItem { Tag = tag, Content = Localization.Format("LastHours", hours) };
                 TimeBox.Items.Insert(TimeBox.Items.Count - 1, item);
             }
             TimeBox.SelectedItem = item;
@@ -115,7 +118,9 @@ public partial class MainWindow : Window, IDisposable
         SearchButton.IsEnabled = false;
         ExportButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
-        StatusText.Text = quick is null ? Localization.Text("Querying") : Localization.Format("QueryingNamed", Localization.Text(quick.Name));
+        SetOperationStatus(() => quick is null
+            ? Localization.Text("Querying")
+            : Localization.Format("QueryingNamed", Localization.Text(quick.Name)));
 
         try
         {
@@ -141,7 +146,7 @@ public partial class MainWindow : Window, IDisposable
                         return;
                     previewRows.AddRange(filtered);
                     EventsGrid.ItemsSource = ProblemGrouping.Group(previewRows);
-                    StatusText.Text = Localization.Format("FirstBatch", previewRows.Count);
+                    SetOperationStatus(() => Localization.Format("FirstBatch", previewRows.Count));
                 });
             }
             var tasks = channels.Select(channel => Task.Run(() =>
@@ -195,6 +200,7 @@ public partial class MainWindow : Window, IDisposable
             if (ReferenceEquals(_operationCancellation, operation))
             {
                 _operationCancellation = null;
+                _operationStatus = null;
                 operation.Dispose();
                 SearchButton.IsEnabled = true;
                 CancelButton.IsEnabled = false;
@@ -280,7 +286,7 @@ public partial class MainWindow : Window, IDisposable
         _operationCancellation?.Dispose();
         var operation = _operationCancellation = new CancellationTokenSource();
         CancelButton.IsEnabled = true;
-        StatusText.Text = Localization.Text("Exporting");
+        SetOperationStatus(() => Localization.Text("Exporting"));
         try
         {
             var scope = ((ComboBoxItem)ExportScopeBox.SelectedItem).Tag.ToString();
@@ -293,10 +299,12 @@ public partial class MainWindow : Window, IDisposable
             };
             var groups = scope == "current" ? _groups : ProblemGrouping.Group(rows);
             var includeXml = IncludeXmlBox.IsChecked == true;
+            var exportLanguage = Localization.Instance.CurrentLanguage;
             await Task.Run(() =>
             {
                 using var formatter = WindowsEventReader.CreateMessageFormatter();
-                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, row => formatter.ReadContent(row, includeXml), operation.Token);
+                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, row => formatter.ReadContent(row, includeXml),
+                    exportLanguage, operation.Token);
             }, operation.Token);
             StatusText.Text = Localization.Format("Exported", Path.GetFileName(dialog.FileName));
         }
@@ -320,6 +328,7 @@ public partial class MainWindow : Window, IDisposable
             if (ReferenceEquals(_operationCancellation, operation))
             {
                 _operationCancellation = null;
+                _operationStatus = null;
                 operation.Dispose();
                 SearchButton.IsEnabled = true;
                 CancelButton.IsEnabled = false;
@@ -436,15 +445,59 @@ public partial class MainWindow : Window, IDisposable
         if (LanguageBox.SelectedItem is not ComboBoxItem item || item.Tag.ToString() == Localization.Instance.CurrentLanguage)
             return;
 
-        Localization.SetLanguage(item.Tag.ToString()!);
-        _groups = ProblemGrouping.Group(_rows);
-        EventsGrid.SelectedItem = null;
-        ApplySort();
-        StatusText.Text = Localization.Text("LanguageChanged");
+        ApplyLanguage(item.Tag.ToString()!);
+    }
+
+    internal void ApplyLanguage(string language, bool persist = true)
+    {
+        var selectedGroup = EventsGrid.SelectedItem as ProblemGroup;
+        var selectedOccurrence = OccurrencesGrid.SelectedItem as EventRow;
+        var selectedTab = DetailsTabs.SelectedIndex;
+        _changingLanguage = true;
+        try
+        {
+            if (persist)
+                Localization.SetLanguage(language);
+            else
+                Localization.UseLanguage(language);
+
+            LanguageBox.SelectedItem = LanguageBox.Items.OfType<ComboBoxItem>()
+                .First(item => item.Tag.ToString() == Localization.Instance.CurrentLanguage);
+            if (_customHoursItem is not null && int.TryParse(_customHoursItem.Tag.ToString(), out var hours))
+                _customHoursItem.Content = Localization.Format("LastHours", hours);
+
+            var displayedRows = EventsGrid.ItemsSource is IEnumerable<ProblemGroup> displayed
+                ? Enumerable.Distinct<EventRow>(displayed.SelectMany(group => group.Events), ReferenceEqualityComparer.Instance)
+                : _rows;
+            _groups = ProblemGrouping.Group(displayedRows);
+            ApplySort();
+            var replacement = selectedGroup is null ? null : _groups.FirstOrDefault(group =>
+                group.Events.Any(row => selectedGroup.Events.Any(selected => ReferenceEquals(row, selected))));
+            EventsGrid.SelectedItem = replacement;
+            OccurrencesGrid.ItemsSource = replacement?.Events;
+            OccurrencesGrid.SelectedItem = selectedOccurrence;
+            OccurrencesTab.Header = replacement is null
+                ? Localization.Text("GroupedEvents")
+                : Localization.Format("GroupedEventsCount", replacement.Count);
+            if (replacement is not null && _selectedRow is not null && _selectedMessage is not null)
+                DetailsBox.Text = FormatDetails(replacement, _selectedRow, _selectedMessage, _selectedXml);
+            if (!string.IsNullOrEmpty(_selectedXml))
+                UpdateParsedXml(_selectedXml);
+            DetailsTabs.SelectedIndex = selectedTab;
+        }
+        finally
+        {
+            _changingLanguage = false;
+        }
+        StatusText.ToolTip = null;
+        StatusText.Text = _operationStatus?.Invoke() ?? Localization.Text("LanguageChanged");
     }
 
     private void EventsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_changingLanguage)
+            return;
+
         _detailsLoadVersion++;
         DetailsBox.Text = "";
         _selectedXml = "";
@@ -514,7 +567,7 @@ public partial class MainWindow : Window, IDisposable
             context = $"{context[..180]}…";
         var query = string.Join(' ', new[]
         {
-            row.Provider, $"Event ID {row.EventId}", row.DisplayLevel,
+            row.Provider, $"{Localization.Text("EventId")} {row.EventId}", row.DisplayLevel,
             string.IsNullOrWhiteSpace(context) ? null : context, Localization.Text("CauseSearchSuffix")
         }.OfType<string>());
         return new Uri($"https://www.google.com/search?q={Uri.EscapeDataString(query)}");
@@ -522,6 +575,9 @@ public partial class MainWindow : Window, IDisposable
 
     private async void OccurrencesGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_changingLanguage)
+            return;
+
         if (OccurrencesGrid.SelectedItem is EventRow row)
             await LoadSelectedDetailsAsync(row);
     }
@@ -616,7 +672,7 @@ public partial class MainWindow : Window, IDisposable
             $"{Localization.Text("EventInfoHeading")}{line}" +
             $"{Localization.Text("ColumnTime")}: {row.Time:yyyy-MM-dd HH:mm:ss}{line}" +
             $"{Localization.Text("ColumnSeverity")}: {row.DisplayLevel}{line}" +
-            $"Event ID: {row.EventId}{line}" +
+            $"{Localization.Text("EventId")}: {row.EventId}{line}" +
             $"{Localization.Text("Provider")}: {row.Provider}{line}" +
             $"{Localization.Text("Channel")}: {row.Channel}{line}" +
             $"{Localization.Text("Computer")}: {row.Computer}{line}" +
@@ -633,8 +689,8 @@ public partial class MainWindow : Window, IDisposable
 
     internal static string FormatSummary(ProblemGroup group) =>
         $"{group.Problem}{Environment.NewLine}" +
-        $"Event ID: {group.EventId}{Environment.NewLine}" +
-        $"Provider: {group.Provider}{Environment.NewLine}" +
+        $"{Localization.Text("EventId")}: {group.EventId}{Environment.NewLine}" +
+        $"{Localization.Text("Provider")}: {group.Provider}{Environment.NewLine}" +
         $"{Localization.Text("Count")}: {group.Count:N0}{Environment.NewLine}" +
         $"{Localization.Text("FirstSeen")}: {group.FirstSeen:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}" +
         $"{Localization.Text("LastSeen")}: {group.LastSeen:yyyy-MM-dd HH:mm:ss}";
@@ -649,6 +705,12 @@ public partial class MainWindow : Window, IDisposable
     {
         if (!string.IsNullOrEmpty(_selectedXml))
             Clipboard.SetText(_selectedXml);
+    }
+
+    private void SetOperationStatus(Func<string> status)
+    {
+        _operationStatus = status;
+        StatusText.Text = status();
     }
 
     protected override void OnClosed(EventArgs e)

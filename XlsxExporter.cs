@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Security;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
@@ -14,10 +15,11 @@ internal static class XlsxExporter
 
     internal static void Export(string path, IReadOnlyList<ProblemGroup> groups, IEnumerable<EventRow> events,
         bool includeXml = false, Func<EventRow, (string Message, string Xml)>? contentFactory = null,
-        CancellationToken cancellationToken = default)
+        string? language = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         cancellationToken.ThrowIfCancellationRequested();
+        var exportLanguage = language ?? Localization.Instance.CurrentLanguage;
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
@@ -25,17 +27,17 @@ internal static class XlsxExporter
             {
                 WriteText(archive, "[Content_Types].xml", ContentTypes);
                 WriteText(archive, "_rels/.rels", PackageRelationships);
-                WriteText(archive, "xl/workbook.xml", Workbook);
+                WriteText(archive, "xl/workbook.xml", Workbook(exportLanguage));
                 WriteText(archive, "xl/_rels/workbook.xml.rels", WorkbookRelationships);
                 WriteText(archive, "xl/styles.xml", Styles);
                 WriteSheet(archive, "xl/worksheets/sheet1.xml",
-                    ["Severity", "Problem", "Count", "Event ID", "Provider", "First Seen", "Last Seen", "Channel"],
-                    groups.Select(group => new object?[] { group.Severity, group.Problem, group.Count, group.EventId, group.Provider, group.FirstSeen, group.LastSeen, group.Channel }), cancellationToken);
+                    [Localization.Text("ColumnSeverity", exportLanguage), Localization.Text("ColumnProblem", exportLanguage), Localization.Text("Count", exportLanguage), Localization.Text("EventId", exportLanguage), Localization.Text("Provider", exportLanguage), Localization.Text("FirstSeen", exportLanguage), Localization.Text("LastSeen", exportLanguage), Localization.Text("Channel", exportLanguage)],
+                    groups.Select(group => new object?[] { group.Severity, group.Problem, group.Count, group.EventId, group.Provider, group.FirstSeen, group.LastSeen, group.Channel }), exportLanguage, cancellationToken);
                 WriteSheet(archive, "xl/worksheets/sheet2.xml",
                     includeXml
-                        ? ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message", "XML"]
-                        : ["Time", "Level", "Event ID", "Provider", "Channel", "Record ID", "Computer", "Message"],
-                    events.Select(row => ExportValues(row, includeXml, contentFactory)), cancellationToken);
+                        ? [Localization.Text("ColumnTime", exportLanguage), Localization.Text("ColumnSeverity", exportLanguage), Localization.Text("EventId", exportLanguage), Localization.Text("Provider", exportLanguage), Localization.Text("Channel", exportLanguage), Localization.Text("RecordId", exportLanguage), Localization.Text("Computer", exportLanguage), Localization.Text("ExcelMessage", exportLanguage), Localization.Text("ExcelXml", exportLanguage)]
+                        : [Localization.Text("ColumnTime", exportLanguage), Localization.Text("ColumnSeverity", exportLanguage), Localization.Text("EventId", exportLanguage), Localization.Text("Provider", exportLanguage), Localization.Text("Channel", exportLanguage), Localization.Text("RecordId", exportLanguage), Localization.Text("Computer", exportLanguage), Localization.Text("ExcelMessage", exportLanguage)],
+                    events.Select(row => ExportValues(row, includeXml, contentFactory, exportLanguage)), exportLanguage, cancellationToken);
             }
             File.Move(temporaryPath, path, true);
         }
@@ -45,15 +47,15 @@ internal static class XlsxExporter
         }
     }
 
-    private static object?[] ExportValues(EventRow row, bool includeXml, Func<EventRow, (string Message, string Xml)>? contentFactory)
+    private static object?[] ExportValues(EventRow row, bool includeXml, Func<EventRow, (string Message, string Xml)>? contentFactory, string language)
     {
         var content = contentFactory?.Invoke(row) ?? (row.Message ?? row.Details, row.Xml);
         return includeXml
-            ? [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, content.Message, content.Xml]
-            : [row.Time, row.Level, row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, content.Message];
+            ? [row.Time, Localization.Level(row.Level, language), row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, content.Message, content.Xml]
+            : [row.Time, Localization.Level(row.Level, language), row.EventId, row.Provider, row.Channel, row.RecordId, row.Computer, content.Message];
     }
 
-    private static void WriteSheet(ZipArchive archive, string name, string[] headers, IEnumerable<object?[]> rows, CancellationToken cancellationToken)
+    private static void WriteSheet(ZipArchive archive, string name, string[] headers, IEnumerable<object?[]> rows, string language, CancellationToken cancellationToken)
     {
         using var writer = XmlWriter.Create(archive.CreateEntry(name, CompressionLevel.Fastest).Open(), new XmlWriterSettings { Encoding = new UTF8Encoding(false), CloseOutput = true });
         writer.WriteStartDocument();
@@ -65,7 +67,7 @@ internal static class XlsxExporter
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (rowNumber > 1_048_576)
-                throw new InvalidOperationException("事件數量超過單一 Excel 工作表上限。 ");
+                throw new InvalidOperationException(Localization.Text("ExcelRowLimit", language));
             WriteRow(writer, rowNumber++, row);
         }
         writer.WriteEndElement();
@@ -146,10 +148,10 @@ internal static class XlsxExporter
         </Relationships>
         """;
 
-    private const string Workbook = """
+    private static string Workbook(string language) => $"""
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-          <sheets><sheet name="問題摘要" sheetId="1" r:id="rId1"/><sheet name="完整事件" sheetId="2" r:id="rId2"/></sheets>
+          <sheets><sheet name="{SecurityElement.Escape(Localization.Text("ExcelProblemSheet", language))}" sheetId="1" r:id="rId1"/><sheet name="{SecurityElement.Escape(Localization.Text("ExcelEventsSheet", language))}" sheetId="2" r:id="rId2"/></sheets>
         </workbook>
         """;
 
