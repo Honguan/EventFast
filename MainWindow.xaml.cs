@@ -41,7 +41,6 @@ public partial class MainWindow : Window, IDisposable
         options ??= new();
         _eventFile = options.EventFile;
         _providerFilter = options.Provider;
-        _quickQuery = options.Quick;
         if (options.From is { } from && options.To is { } to)
         {
             FromDate.SelectedDate = from;
@@ -80,6 +79,8 @@ public partial class MainWindow : Window, IDisposable
             if (!options.HasTimeRange)
                 TimeBox.SelectedIndex = TimeBox.Items.Count - 1;
         }
+        _quickQuery = options.Quick;
+        UpdateFilterVisuals();
         if (options.AutoRun)
             Loaded += (_, _) => Dispatcher.BeginInvoke(() => _ = RunQueryAsync(_quickQuery is null ? null : EventQuery.QuickQueries[_quickQuery]));
     }
@@ -87,12 +88,14 @@ public partial class MainWindow : Window, IDisposable
     private async void Search_Click(object sender, RoutedEventArgs e)
     {
         _quickQuery = null;
+        UpdateFilterVisuals();
         await RunQueryAsync(null);
     }
 
     private async void Quick_Click(object sender, RoutedEventArgs e)
     {
         _quickQuery = (string)((Button)sender).Tag;
+        UpdateFilterVisuals();
         await RunQueryAsync(EventQuery.QuickQueries[_quickQuery]);
     }
 
@@ -228,6 +231,7 @@ public partial class MainWindow : Window, IDisposable
         Title = $"EventFast — {Path.GetFileName(_eventFile)}";
         SystemBox.IsEnabled = ApplicationBox.IsEnabled = false;
         TimeBox.SelectedIndex = TimeBox.Items.Count - 1;
+        UpdateFilterVisuals();
         await RunQueryAsync(null);
     }
 
@@ -350,6 +354,7 @@ public partial class MainWindow : Window, IDisposable
             return;
 
         ApplySort();
+        UpdateFilterVisuals();
     }
 
     private void ApplySort()
@@ -443,6 +448,73 @@ public partial class MainWindow : Window, IDisposable
     {
         if (CustomTimePanel is not null && TimeBox.SelectedItem is ComboBoxItem item)
             CustomTimePanel.Visibility = item.Tag.ToString() == "custom" ? Visibility.Visible : Visibility.Collapsed;
+        UpdateFilterVisuals();
+    }
+
+    private void Filter_Changed(object sender, RoutedEventArgs e) => UpdateFilterVisuals();
+
+    private void ManualFilter_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateFilterVisuals();
+    }
+
+    private void UpdateFilterVisuals()
+    {
+        if (ActiveFiltersText is null || SearchBox is null || TimeBox.SelectedItem is not ComboBoxItem timeItem ||
+            LevelBox.SelectedItem is not ComboBoxItem levelItem || SortBox.SelectedItem is not ComboBoxItem sortItem)
+            return;
+
+        var quick = _quickQuery is not null && EventQuery.QuickQueries.TryGetValue(_quickQuery, out var selectedQuick)
+            ? selectedQuick
+            : null;
+        var criteria = quick is null ? EventQuery.Parse(SearchBox.Text, 0, TimeSpan.Zero, _providerFilter) : null;
+        var channelsOverridden = quick?.Channels is { Length: > 0 };
+        var channelsEditable = _eventFile is null && !channelsOverridden;
+        SystemBox.IsEnabled = ApplicationBox.IsEnabled = channelsEditable;
+        SetFilterActive(SearchBox, criteria?.Keyword is not null || criteria?.EventId is not null);
+        SetFilterActive(TimeBox, timeItem.Tag.ToString() != "24");
+        var custom = timeItem.Tag.ToString() == "custom";
+        SetFilterActive(FromDate, custom);
+        SetFilterActive(ToDate, custom);
+        SetFilterActive(LevelBox, levelItem.Tag.ToString() != "3");
+        SetFilterActive(SystemBox, channelsEditable && SystemBox.IsChecked == true);
+        SetFilterActive(ApplicationBox, channelsEditable && ApplicationBox.IsChecked == true);
+        SetFilterActive(SortBox, sortItem.Tag.ToString() != "default");
+        SetFilterActive(IncludeXmlBox, IncludeXmlBox.IsChecked == true);
+        foreach (var button in QuickFilterPanel.Children.OfType<Button>())
+            SetFilterActive(button, button.Tag.ToString() == _quickQuery, quickButton: true);
+
+        var parts = new List<string>();
+        if (quick is not null)
+            parts.Add(Localization.Text(quick.Name));
+        if (criteria?.Keyword is { } keyword)
+            parts.Add(Localization.Format("FilterKeyword", keyword));
+        if (criteria?.EventId is { } eventId)
+            parts.Add($"{Localization.Text("EventId")}: {eventId}");
+        if (criteria?.Providers is { Count: > 0 })
+            parts.Add(Localization.Format("FilterProvider", string.Join(", ", criteria.Providers)));
+        parts.Add(timeItem.Content.ToString()!);
+        if (custom && FromDate.SelectedDate is { } from && ToDate.SelectedDate is { } to)
+            parts.Add($"{from:yyyy-MM-dd} – {to:yyyy-MM-dd}");
+        parts.Add(levelItem.Content.ToString()!);
+        var channels = _eventFile is not null ? [Path.GetFileName(_eventFile)] :
+            quick?.Channels is { Length: > 0 } ? quick.Channels :
+            new[] { SystemBox.IsChecked == true ? "System" : null, ApplicationBox.IsChecked == true ? "Application" : null }
+                .OfType<string>().ToArray();
+        parts.Add(Localization.Format("FilterChannels", string.Join(" + ", channels)));
+        if (sortItem.Tag.ToString() != "default")
+            parts.Add(Localization.Format("FilterSort", sortItem.Content));
+        if (IncludeXmlBox.IsChecked == true)
+            parts.Add(IncludeXmlBox.Content.ToString()!);
+        ActiveFiltersText.Text = Localization.Format("ActiveFilters", string.Join(" · ", parts));
+    }
+
+    private void SetFilterActive(Control control, bool active, bool quickButton = false)
+    {
+        if (active)
+            control.Style = (Style)FindResource(quickButton ? "ActiveQuickButton" : "ActiveFilterControl");
+        else
+            control.ClearValue(StyleProperty);
     }
 
     private void Language_Changed(object sender, SelectionChangedEventArgs e)
@@ -496,6 +568,7 @@ public partial class MainWindow : Window, IDisposable
         }
         StatusText.ToolTip = null;
         StatusText.Text = _operationStatus?.Invoke() ?? Localization.Text("LanguageChanged");
+        UpdateFilterVisuals();
     }
 
     private void EventsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
