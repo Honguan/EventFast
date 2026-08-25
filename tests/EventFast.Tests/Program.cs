@@ -116,7 +116,7 @@ if (args.Contains("--integration"))
     WithPath(path =>
     {
         using var formatter = WindowsEventReader.CreateMessageFormatter();
-        XlsxExporter.Export(path, ProblemGrouping.Group(messageRows), messageRows, true, formatter.Format, WindowsEventReader.ReadXml);
+        XlsxExporter.Export(path, ProblemGrouping.Group(messageRows), messageRows, true, row => formatter.ReadContent(row, includeXml: true));
         Assert(new FileInfo(path).Length > 0);
     });
     Console.WriteLine("PASS Native Message/XML XLSX export");
@@ -310,11 +310,16 @@ static void TestExport()
     WithPath(path =>
     {
         var row = Row(41, "Microsoft-Windows-Kernel-Power", "Unexpected shutdown");
-        XlsxExporter.Export(path, ProblemGrouping.Group([row]), [row], includeXml: true);
+        var contentCalls = 0;
+        XlsxExporter.Export(path, ProblemGrouping.Group([row]), [row], includeXml: true, _ =>
+        {
+            contentCalls++;
+            return (row.Details, row.Xml);
+        });
         using var archive = ZipFile.OpenRead(path);
         using var reader = new StreamReader(archive.GetEntry("xl/worksheets/sheet2.xml")!.Open());
         var xml = reader.ReadToEnd();
-        Assert(xml.Contains("Message") && xml.Contains("XML") && xml.Contains("Unexpected shutdown"));
+        Assert(contentCalls == 1 && xml.Contains("Message") && xml.Contains("XML") && xml.Contains("Unexpected shutdown"));
     });
 }
 

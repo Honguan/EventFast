@@ -45,6 +45,22 @@ cache.GetOrAdd(cacheKey, () => throw new InvalidOperationException("Warm cache m
 cacheWatch.Stop();
 Console.WriteLine($"System 24h cache cold/warm\t-\t-\t{cold:F1}/{cacheWatch.Elapsed.TotalMilliseconds:F3}\t-\t-\t-");
 
+var nativeExportRows = WindowsEventReader.Read("System", EventQuery.BuildXPath(cacheCriteria), CancellationToken.None, 100);
+var nativeExportPath = Path.Combine(Path.GetTempPath(), $"EventFast-Native-{Guid.NewGuid():N}.xlsx");
+try
+{
+    using var contentReader = WindowsEventReader.CreateMessageFormatter();
+    var nativeExportWatch = Stopwatch.StartNew();
+    XlsxExporter.Export(nativeExportPath, ProblemGrouping.Group(nativeExportRows), nativeExportRows, true,
+        row => contentReader.ReadContent(row, includeXml: true));
+    nativeExportWatch.Stop();
+    Console.WriteLine($"Native Message/XML export\t{nativeExportRows.Count}\t-\t{nativeExportWatch.Elapsed.TotalMilliseconds:F1}\t-\t-\t-");
+}
+finally
+{
+    File.Delete(nativeExportPath);
+}
+
 if (args.Contains("--large"))
 {
     Console.WriteLine("Synthetic events\tGroup ms\tGroups\tExport ms\tExport/s\tXLSX MB\tManaged RAM MB");
