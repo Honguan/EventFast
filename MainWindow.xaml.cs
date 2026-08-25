@@ -17,6 +17,7 @@ public partial class MainWindow : Window, IDisposable
     private IReadOnlyList<EventRow> _rows = [];
     private IReadOnlyList<EventRow> _allRows = [];
     private string? _eventFile;
+    private readonly string? _providerFilter;
     private string _selectedXml = "";
 
     internal MainWindow(StartupOptions? options = null)
@@ -26,6 +27,7 @@ public partial class MainWindow : Window, IDisposable
         ToDate.SelectedDate = DateTime.Today;
         options ??= new(null, false, null, null, null, null);
         _eventFile = options.EventFile;
+        _providerFilter = options.Provider;
         if (options.Today)
             TimeBox.SelectedIndex = 4;
         else if (options.Hours is { } hours)
@@ -39,7 +41,7 @@ public partial class MainWindow : Window, IDisposable
             }
             TimeBox.SelectedItem = item;
         }
-        SearchBox.Text = string.Join(' ', new[] { options.Query, options.Provider, options.EventId?.ToString(CultureInfo.InvariantCulture) }.OfType<string>());
+        SearchBox.Text = string.Join(' ', new[] { options.Query, options.EventId?.ToString(CultureInfo.InvariantCulture) }.OfType<string>());
         if (_eventFile is not null)
         {
             Title = $"EventFast — {Path.GetFileName(_eventFile)}";
@@ -85,7 +87,7 @@ public partial class MainWindow : Window, IDisposable
             var maximumLevel = int.Parse(((ComboBoxItem)LevelBox.SelectedItem).Tag.ToString()!, CultureInfo.InvariantCulture);
             var period = SelectedPeriod();
             var criteria = quick is null
-                ? EventQuery.Parse(SearchBox.Text, maximumLevel, period)
+                ? EventQuery.Parse(SearchBox.Text, maximumLevel, period, _providerFilter)
                 : EventQuery.FromQuick(quick, maximumLevel, period);
             if (((ComboBoxItem)TimeBox.SelectedItem).Tag.ToString() == "custom")
             {
