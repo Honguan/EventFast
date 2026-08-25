@@ -480,7 +480,7 @@ public partial class MainWindow : Window, IDisposable
                 ? Localization.Text("GroupedEvents")
                 : Localization.Format("GroupedEventsCount", replacement.Count);
             if (replacement is not null && _selectedRow is not null && _selectedMessage is not null)
-                DetailsBox.Text = FormatDetails(replacement, _selectedRow, _selectedMessage, _selectedXml);
+                DetailsBox.Text = FormatDetails(replacement, _selectedRow, _selectedMessage);
             if (!string.IsNullOrEmpty(_selectedXml))
                 UpdateParsedXml(_selectedXml);
             DetailsTabs.SelectedIndex = selectedTab;
@@ -501,6 +501,7 @@ public partial class MainWindow : Window, IDisposable
         _detailsLoadVersion++;
         DetailsBox.Text = "";
         _selectedXml = "";
+        CopyXmlButton.IsEnabled = false;
         _selectedRow = null;
         _selectedMessage = null;
         ParsedXmlStatus.Text = "";
@@ -591,8 +592,11 @@ public partial class MainWindow : Window, IDisposable
         var request = ++_detailsLoadVersion;
         _selectedRow = row;
         _selectedMessage = row.Message ?? row.Details;
-        DetailsTabs.SelectedIndex = 1;
+        if (DetailsTabs.SelectedItem != ParsedXmlTab)
+            DetailsTabs.SelectedItem = EventContentTab;
         DetailsBox.Text = Localization.Text("LoadingDetails");
+        _selectedXml = "";
+        CopyXmlButton.IsEnabled = false;
         ParsedXmlStatus.Text = "";
         ParsedXmlTree.ItemsSource = null;
         (string Message, string Xml) content;
@@ -614,7 +618,8 @@ public partial class MainWindow : Window, IDisposable
             return;
         _selectedMessage = content.Message;
         _selectedXml = content.Xml;
-        DetailsBox.Text = FormatDetails(group, row, content.Message, content.Xml);
+        CopyXmlButton.IsEnabled = !string.IsNullOrEmpty(content.Xml);
+        DetailsBox.Text = FormatDetails(group, row, content.Message);
         UpdateParsedXml(content.Xml);
     }
 
@@ -656,11 +661,11 @@ public partial class MainWindow : Window, IDisposable
     {
         var display = string.Join(' ', value.Split((char[]?)null,
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        // ponytail: tree labels stop at 500 characters; raw XML remains the full-value inspector.
+        // ponytail: tree labels stop at 500 characters; Copy XML preserves the complete source.
         return display.Length <= 500 ? display : $"{display[..500]}…";
     }
 
-    internal static string FormatDetails(ProblemGroup group, EventRow row, string message, string xml)
+    internal static string FormatDetails(ProblemGroup group, EventRow row, string message)
     {
         var line = Environment.NewLine;
         return
@@ -677,8 +682,7 @@ public partial class MainWindow : Window, IDisposable
             $"{Localization.Text("Channel")}: {row.Channel}{line}" +
             $"{Localization.Text("Computer")}: {row.Computer}{line}" +
             $"{Localization.Text("RecordId")}: {row.RecordId}{line}{line}" +
-            $"{Localization.Text("EventMessageHeading")}{line}{message.Trim()}{line}{line}" +
-            $"{Localization.Text("RawXmlHeading")}{line}{xml.Trim()}";
+            $"{Localization.Text("EventMessageHeading")}{line}{message.Trim()}";
     }
 
     private void CopyProblem_Click(object sender, RoutedEventArgs e)

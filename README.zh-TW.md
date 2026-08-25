@@ -23,7 +23,7 @@ EventFast.exe --query "disk 153"
 EventFast.exe C:\Logs\system.evtx
 ```
 
-選取問題後可查看每次發生的時間、完整訊息與原始 XML。按「匯出 Excel」可輸出問題摘要與完整事件工作表。
+選取問題後可查看每次發生的時間與完整訊息；事件 XML 可在獨立的「解析 XML」分頁中以樹狀結構查看。按「匯出 Excel」可輸出問題摘要與完整事件工作表。
 
 ## 語言設定
 

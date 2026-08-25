@@ -320,9 +320,10 @@ static void TestEventDetailsLayout()
 {
     var row = Row(17, "Microsoft-Windows-WHEA-Logger", "payload", new DateTime(2026, 8, 24, 22, 45, 57), "Warning");
     var group = ProblemGrouping.Group([row])[0];
-    var details = MainWindow.FormatDetails(group, row, "發生已修正的硬體錯誤。", "<Event />");
+    var details = MainWindow.FormatDetails(group, row, "發生已修正的硬體錯誤。");
     Assert(details.Contains("Event information") && details.Contains("Time: 2026-08-24 22:45:57") &&
-           details.Contains("Event ID: 17") && details.Contains("Event message") && details.Contains("Raw XML"));
+           details.Contains("Event ID: 17") && details.Contains("Event message") &&
+           !details.Contains("Raw XML") && !details.Contains("<Event"));
 }
 
 static void TestProblemSearchUrl()
@@ -549,6 +550,10 @@ static void TestUiQueryCompletion()
             var eventsGrid = (DataGrid)window.FindName("EventsGrid");
             var occurrencesGrid = (DataGrid)window.FindName("OccurrencesGrid");
             var detailsBox = (TextBox)window.FindName("DetailsBox");
+            var detailsTabs = (TabControl)window.FindName("DetailsTabs");
+            var eventContentTab = (TabItem)window.FindName("EventContentTab");
+            var parsedXmlTab = (TabItem)window.FindName("ParsedXmlTab");
+            var copyXmlButton = (Button)window.FindName("CopyXmlButton");
             var searchButton = (Button)window.FindName("SearchButton");
             var timeBox = (ComboBox)window.FindName("TimeBox");
             var sampleRows = new[]
@@ -559,15 +564,18 @@ static void TestUiQueryCompletion()
             var sampleGroup = ProblemGrouping.Group(sampleRows)[0];
             eventsGrid.ItemsSource = new[] { sampleGroup };
             eventsGrid.SelectedItem = sampleGroup;
-            ((TabControl)window.FindName("DetailsTabs")).SelectedIndex = 0;
+            detailsTabs.SelectedIndex = 0;
             Assert(occurrencesGrid.Items.Count == 2);
             var occurrencesTab = (TabItem)window.FindName("OccurrencesTab");
-            Assert(occurrencesTab.Header.ToString() == "Group Events (2)" &&
+            Assert(detailsTabs.Items.Count == 3 && detailsTabs.Items[0] == occurrencesTab &&
+                   detailsTabs.Items[1] == eventContentTab && detailsTabs.Items[2] == parsedXmlTab &&
+                   detailsBox.Parent is Grid contentGrid && contentGrid.ColumnDefinitions.Count == 0 &&
+                   !copyXmlButton.IsEnabled && occurrencesTab.Header.ToString() == "Group Events (2)" &&
                    ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours");
             window.ApplyLanguage("zh-TW", persist: false);
             Assert(searchButton.Content.ToString() == "搜尋" && occurrencesTab.Header.ToString() == "群組事件 (2)" &&
                    eventsGrid.SelectedItem is ProblemGroup &&
-                   occurrencesGrid.Items.Count == 2 && ((TabControl)window.FindName("DetailsTabs")).SelectedIndex == 0 &&
+                   occurrencesGrid.Items.Count == 2 && detailsTabs.SelectedIndex == 0 &&
                    ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時");
             window.ApplyLanguage("en", persist: false);
             Assert(searchButton.Content.ToString() == "Search" && occurrencesTab.Header.ToString() == "Group Events (2)" &&

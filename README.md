@@ -23,7 +23,7 @@ EventFast.exe --query "disk 153"
 EventFast.exe C:\Logs\system.evtx
 ```
 
-Select a problem to inspect each occurrence, the complete message, and raw XML. Use **Export Excel** to create problem-summary and complete-event worksheets.
+Select a problem to inspect each occurrence and complete message; use the dedicated **Parsed XML** tab for structured event XML. Use **Export Excel** to create problem-summary and complete-event worksheets.
 
 ## Language setting
 
