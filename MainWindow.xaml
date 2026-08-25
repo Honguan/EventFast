@@ -4,6 +4,22 @@
         xmlns:local="clr-namespace:EventFast"
         Title="EventFast" Icon="Assets/EventFast.ico" Height="760" Width="1180" MinHeight="560" MinWidth="820"
         Background="#F4F6F8" PreviewKeyDown="Window_PreviewKeyDown" AllowDrop="True" Drop="Window_Drop">
+    <Window.Resources>
+        <Style x:Key="ActiveFilterControl" TargetType="{x:Type Control}">
+            <Setter Property="Background" Value="#E5F1FB" />
+            <Setter Property="Foreground" Value="#003B66" />
+            <Setter Property="BorderBrush" Value="#0078D4" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="ActiveQuickButton" TargetType="Button">
+            <Setter Property="Background" Value="#005A9E" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#003B66" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Resources>
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -25,9 +41,10 @@
                 <ComboBoxItem Tag="selected" Content="{local:Loc ExportSelected}" />
                 <ComboBoxItem Tag="all" Content="{local:Loc ExportAll}" />
             </ComboBox>
-            <CheckBox x:Name="IncludeXmlBox" DockPanel.Dock="Right" Content="{local:Loc IncludeXml}" VerticalAlignment="Center" />
+            <CheckBox x:Name="IncludeXmlBox" DockPanel.Dock="Right" Content="{local:Loc IncludeXml}" VerticalAlignment="Center"
+                      Checked="Filter_Changed" Unchecked="Filter_Changed" />
             <TextBox x:Name="SearchBox" Height="34" VerticalContentAlignment="Center"
-                     ToolTip="{local:Loc SearchTip}" />
+                     ToolTip="{local:Loc SearchTip}" TextChanged="ManualFilter_Changed" />
         </DockPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12">
@@ -46,19 +63,21 @@
                 <ComboBoxItem Tag="all" Content="{local:Loc AllTime}" />
             </ComboBox>
             <StackPanel x:Name="CustomTimePanel" Orientation="Horizontal" Visibility="Collapsed" Margin="8,0,0,0">
-                <DatePicker x:Name="FromDate" Width="120" />
+                <DatePicker x:Name="FromDate" Width="120" SelectedDateChanged="Filter_Changed" />
                 <TextBlock Text="{local:Loc To}" VerticalAlignment="Center" Margin="4,0" />
-                <DatePicker x:Name="ToDate" Width="120" />
+                <DatePicker x:Name="ToDate" Width="120" SelectedDateChanged="Filter_Changed" />
             </StackPanel>
             <TextBlock Text="{local:Loc Level}" VerticalAlignment="Center" Margin="20,0,0,0" />
-            <ComboBox x:Name="LevelBox" Width="120" SelectedIndex="2">
+            <ComboBox x:Name="LevelBox" Width="120" SelectedIndex="2" SelectionChanged="Filter_Changed">
                 <ComboBoxItem Tag="1" Content="{local:Loc CriticalOnly}" />
                 <ComboBoxItem Tag="2" Content="{local:Loc ErrorsAndAbove}" />
                 <ComboBoxItem Tag="3" Content="{local:Loc WarningsAndAbove}" />
                 <ComboBoxItem Tag="0" Content="{local:Loc All}" />
             </ComboBox>
-            <CheckBox x:Name="SystemBox" Content="System" IsChecked="True" Margin="24,0,12,0" VerticalAlignment="Center" />
-            <CheckBox x:Name="ApplicationBox" Content="Application" IsChecked="True" VerticalAlignment="Center" />
+            <CheckBox x:Name="SystemBox" Content="System" IsChecked="True" Margin="24,0,12,0" VerticalAlignment="Center"
+                      Checked="ManualFilter_Changed" Unchecked="ManualFilter_Changed" />
+            <CheckBox x:Name="ApplicationBox" Content="Application" IsChecked="True" VerticalAlignment="Center"
+                      Checked="ManualFilter_Changed" Unchecked="ManualFilter_Changed" />
             <Button x:Name="AdminButton" Content="{local:Loc RestartAdmin}" Visibility="Collapsed" Margin="16,0,0,0" Click="Admin_Click" />
             <TextBlock Text="{local:Loc Sort}" VerticalAlignment="Center" Margin="20,0,0,0" />
             <ComboBox x:Name="SortBox" Width="100" SelectedIndex="0" SelectionChanged="Sort_Changed">
@@ -77,20 +96,26 @@
             <TextBlock x:Name="StatusText" Margin="24,0,0,0" VerticalAlignment="Center" Foreground="#40566C" />
         </StackPanel>
 
-        <WrapPanel Grid.Row="2" Margin="0,0,0,12">
-            <Button Tag="all" Content="{local:Loc QuickAll}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="system" Content="{local:Loc QuickSystem}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="crash" Content="{local:Loc QuickCrash}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="disk" Content="{local:Loc QuickDisk}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="ntfs" Content="{local:Loc QuickNtfs}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="usb" Content="{local:Loc QuickUsb}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="device" Content="{local:Loc QuickDevice}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="driver" Content="{local:Loc QuickDriver}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="whea" Content="{local:Loc QuickWhea}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="network" Content="{local:Loc QuickNetwork}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="update" Content="{local:Loc QuickUpdate}" Click="Quick_Click" Margin="0,0,6,6" />
-            <Button Tag="power" Content="{local:Loc QuickPower}" Click="Quick_Click" Margin="0,0,6,6" />
-        </WrapPanel>
+        <StackPanel Grid.Row="2" Margin="0,0,0,12">
+            <WrapPanel x:Name="QuickFilterPanel">
+                <Button Tag="all" Content="{local:Loc QuickAll}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="system" Content="{local:Loc QuickSystem}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="crash" Content="{local:Loc QuickCrash}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="disk" Content="{local:Loc QuickDisk}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="ntfs" Content="{local:Loc QuickNtfs}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="usb" Content="{local:Loc QuickUsb}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="device" Content="{local:Loc QuickDevice}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="driver" Content="{local:Loc QuickDriver}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="whea" Content="{local:Loc QuickWhea}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="network" Content="{local:Loc QuickNetwork}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="update" Content="{local:Loc QuickUpdate}" Click="Quick_Click" Margin="0,0,6,6" />
+                <Button Tag="power" Content="{local:Loc QuickPower}" Click="Quick_Click" Margin="0,0,6,6" />
+            </WrapPanel>
+            <Border Background="#E5F1FB" BorderBrush="#8AB8DA" BorderThickness="1" CornerRadius="3" Padding="8,5">
+                <TextBlock x:Name="ActiveFiltersText" Foreground="#003B66" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite" />
+            </Border>
+        </StackPanel>
 
         <DataGrid x:Name="EventsGrid" Grid.Row="3" IsReadOnly="True" AutoGenerateColumns="False"
                   EnableRowVirtualization="True" EnableColumnVirtualization="True"

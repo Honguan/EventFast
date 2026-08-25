@@ -621,7 +621,14 @@ static void TestUiQueryCompletion()
             var parsedXmlTab = (TabItem)window.FindName("ParsedXmlTab");
             var copyXmlButton = (Button)window.FindName("CopyXmlButton");
             var searchButton = (Button)window.FindName("SearchButton");
+            var searchBox = (TextBox)window.FindName("SearchBox");
             var timeBox = (ComboBox)window.FindName("TimeBox");
+            var levelBox = (ComboBox)window.FindName("LevelBox");
+            var systemBox = (CheckBox)window.FindName("SystemBox");
+            var applicationBox = (CheckBox)window.FindName("ApplicationBox");
+            var includeXmlBox = (CheckBox)window.FindName("IncludeXmlBox");
+            var fromDate = (DatePicker)window.FindName("FromDate");
+            var activeFiltersText = (TextBlock)window.FindName("ActiveFiltersText");
             var sampleRows = new[]
             {
                 Row(153, "disk", "Retry sector 1") with { Message = "Retry sector 1", Xml = "<Event />" },
@@ -637,16 +644,59 @@ static void TestUiQueryCompletion()
                    detailsTabs.Items[1] == eventContentTab && detailsTabs.Items[2] == parsedXmlTab &&
                    detailsBox.Parent is Grid contentGrid && contentGrid.ColumnDefinitions.Count == 0 &&
                    !copyXmlButton.IsEnabled && occurrencesTab.Header.ToString() == "Group Events (2)" &&
-                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours");
+                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours" &&
+                   searchBox.Style is null && timeBox.Style is not null && levelBox.Style is null &&
+                   systemBox.Style is not null && applicationBox.Style is not null &&
+                   activeFiltersText.Text.Contains("Last 48 hours") && activeFiltersText.Text.Contains("System + Application"));
+            searchBox.Text = "disk 153";
+            Assert(searchBox.Style is not null && activeFiltersText.Text.Contains("Keyword: disk") &&
+                   activeFiltersText.Text.Contains("Event ID: 153"));
+            searchBox.Clear();
+            Assert(searchBox.Style is null);
+            includeXmlBox.IsChecked = true;
+            Assert(includeXmlBox.Style is not null && activeFiltersText.Text.Contains("Include XML"));
+            includeXmlBox.IsChecked = false;
+            levelBox.SelectedIndex = 3;
+            Assert(levelBox.Style is not null && activeFiltersText.Text.Contains("All"));
+            levelBox.SelectedIndex = 2;
+            Assert(levelBox.Style is null);
+            var originalTime = timeBox.SelectedItem;
+            timeBox.SelectedItem = timeBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == "custom");
+            Assert(fromDate.Style is not null);
+            timeBox.SelectedItem = originalTime;
+            Assert(fromDate.Style is null);
+            applicationBox.IsChecked = false;
+            Assert(applicationBox.Style is null && activeFiltersText.Text.Contains("Channels: System"));
+            applicationBox.IsChecked = true;
             window.ApplyLanguage("zh-TW", persist: false);
             Assert(searchButton.Content.ToString() == "搜尋" && occurrencesTab.Header.ToString() == "群組事件 (2)" &&
                    eventsGrid.SelectedItem is ProblemGroup &&
                    occurrencesGrid.Items.Count == 2 && detailsTabs.SelectedIndex == 0 &&
-                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時");
+                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時" && timeBox.Style is not null &&
+                   activeFiltersText.Text.StartsWith("啟用篩選：") && activeFiltersText.Text.Contains("最近 48 小時"));
             window.ApplyLanguage("en", persist: false);
             Assert(searchButton.Content.ToString() == "Search" && occurrencesTab.Header.ToString() == "Group Events (2)" &&
                    eventsGrid.SelectedItem is ProblemGroup && ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours");
+            var quickWindow = new MainWindow(new(Quick: "whea"));
+            var quickPanel = (WrapPanel)quickWindow.FindName("QuickFilterPanel");
+            var wheaButton = quickPanel.Children.OfType<Button>().Single(button => button.Tag.ToString() == "whea");
+            var quickSummary = (TextBlock)quickWindow.FindName("ActiveFiltersText");
+            Assert(wheaButton.Style is not null && quickSummary.Text.Contains("Hardware / WHEA") &&
+                   quickSummary.Text.Contains("Channels: System") &&
+                   !((CheckBox)quickWindow.FindName("SystemBox")).IsEnabled &&
+                   !((CheckBox)quickWindow.FindName("ApplicationBox")).IsEnabled &&
+                   ((TextBox)quickWindow.FindName("SearchBox")).Style is null);
+            ((TextBox)quickWindow.FindName("SearchBox")).Text = "disk 153";
+            Assert(wheaButton.Style is not null && ((TextBox)quickWindow.FindName("SearchBox")).Style is null);
+            quickWindow.ApplyLanguage("zh-TW", persist: false);
+            Assert(wheaButton.Style is not null && quickSummary.Text.Contains("硬體 / WHEA"));
+            quickWindow.ApplyLanguage("en", persist: false);
+            quickWindow.Close();
+            var providerWindow = new MainWindow(new(Provider: "disk"));
+            Assert(((TextBlock)providerWindow.FindName("ActiveFiltersText")).Text.Contains("Provider: disk"));
+            providerWindow.Close();
             ((ComboBox)window.FindName("SortBox")).SelectedIndex = 4;
+            Assert(((ComboBox)window.FindName("SortBox")).Style is not null && activeFiltersText.Text.Contains("Sort: Event ID"));
             window.Show();
             window.Hide();
             Assert(detailsBox.Padding == new Thickness(12) && detailsBox.FontSize == 14 &&
