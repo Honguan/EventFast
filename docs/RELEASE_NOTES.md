@@ -1,13 +1,8 @@
-# EventFast v1.0.2
+# EventFast v1.0.3
 
-修正：
+New:
 
-- F5 重新整理會取得最新事件
-- 保留診斷碼與裝置資訊，避免不同問題被錯誤合併
-- `--provider` 改用 Windows Event Log 原生篩選
-- 管理員重新啟動會保留完整查詢狀態
-
-效能：
-
-- 關鍵字搜尋不再逐筆重新查詢事件內容
-- Excel 匯出以單次查詢同時取得事件內容與 XML
+- Added the EventFast application icon and logo
+- Added English as the default language with a persistent Traditional Chinese option
+- Added an expandable Parsed XML pane beside the raw event content
+- Added event-specific cause searches using Provider, Event ID, level, and a short message without sending raw XML
