@@ -7,10 +7,12 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using EventFast;
+using AppLocalization = EventFast.Localization;
 
 var tests = new (string Name, Action Run)[]
 {
     ("Query parser", TestParser),
+    ("Localization and settings", TestLocalization),
     ("XPath/time/level filters", TestXPath),
     ("Keyword and Event ID filters", TestFilters),
     ("Grouping/classifier/sorting", TestGrouping),
@@ -75,7 +77,7 @@ if (args.Contains("--integration"))
                 CancellationToken.None, 25);
             Assert(byTime.Any(row => row.RecordId == sample.RecordId));
 
-            var maximumLevel = sample.Level switch { "嚴重" => 1, "錯誤" => 2, "警告" => 3, "資訊" => 4, "詳細" => 5, _ => 0 };
+            var maximumLevel = LevelNumber(sample.Level);
             var byLevel = WindowsEventReader.Read(channel,
                 EventQuery.BuildXPath(new(maximumLevel, TimeSpan.FromDays(30), null, null)), CancellationToken.None, 25);
             Assert(maximumLevel == 0 || byLevel.Count > 0 &&
@@ -132,7 +134,7 @@ if (args.Contains("--integration"))
     }
     catch (UnauthorizedAccessException exception)
     {
-        Assert(exception.Message.Contains("權限不足"));
+        Assert(exception.Message.Contains("Access denied"));
         Console.WriteLine("PASS Non-admin EVTX permission mapping");
     }
 
@@ -210,6 +212,26 @@ static void TestParser()
     Assert(query.EventId == 1000 && query.Keyword == "NVIDIA crash" && query.Period == TimeSpan.FromHours(12));
 }
 
+static void TestLocalization()
+{
+    AppLocalization.UseLanguage("en");
+    Assert(AppLocalization.ResourcesMatch && AppLocalization.Text("Search") == "Search" &&
+           ProblemClassifier.Classify("disk", 153) == "Disk I/O retry");
+    WithPath(path =>
+    {
+        Assert(AppLocalization.LoadLanguage(path) == "en");
+        AppLocalization.SaveLanguage(path, "zh-TW");
+        Assert(AppLocalization.LoadLanguage(path) == "zh-TW");
+        File.WriteAllText(path, "not json");
+        Assert(AppLocalization.LoadLanguage(path) == "en");
+        File.WriteAllText(path, "{\"Language\":123}");
+        Assert(AppLocalization.LoadLanguage(path) == "en");
+    });
+    AppLocalization.UseLanguage("zh-TW");
+    Assert(AppLocalization.Text("Search") == "搜尋" && ProblemClassifier.Classify("disk", 153) == "磁碟 I/O 重試");
+    AppLocalization.UseLanguage("en");
+}
+
 static void TestXPath()
 {
     var xpath = EventQuery.BuildXPath(new(2, TimeSpan.FromHours(3), 51, null));
@@ -225,7 +247,7 @@ static void TestFilters()
     Assert(EventQuery.Matches(row, EventQuery.Parse("NVIDIA crash 1000", 3, TimeSpan.FromDays(1))));
     Assert(!EventQuery.Matches(row, EventQuery.Parse("Realtek 1000", 3, TimeSpan.FromDays(1))));
     Assert(!EventQuery.Matches(row, EventQuery.Parse("NVIDIA crash 1001", 3, TimeSpan.FromDays(1))));
-    Assert(EventQuery.Matches(Row(153, "disk", "retry"), EventQuery.Parse("磁碟", 3, TimeSpan.FromDays(1))));
+    Assert(EventQuery.Matches(Row(153, "disk", "retry"), EventQuery.Parse("Disk", 3, TimeSpan.FromDays(1))));
     var provider = new QueryCriteria(0, TimeSpan.FromHours(1), null, null, ["disk"]);
     Assert(EventQuery.BuildXPath(provider).Contains("Provider[@Name='disk']") && EventQuery.Matches(Row(153, "disk", "retry"), provider));
     Assert(!EventQuery.Matches(Row(153, "storport", "retry"), provider));
@@ -235,14 +257,14 @@ static void TestGrouping()
 {
     var now = DateTime.Now;
     var groups = ProblemGrouping.Group([
-        Row(153, "disk", "Retry sector 123", now.AddMinutes(-2), "警告"),
-        Row(153, "disk", "Retry sector 123", now, "錯誤"),
-        Row(153, "disk", "Retry sector 456", now, "錯誤"),
-        Row(1000, "Application Error", "App failed", now, "錯誤"),
-        Row(2, "Provider", "Failure\nDevice 01234567-89ab-cdef-0123-456789abcdef status 0xabcdef12", now, "錯誤"),
-        Row(2, "Provider", "Failure\nDevice fedcba98-7654-3210-fedc-ba9876543210 status 0x12345678", now, "錯誤")
+        Row(153, "disk", "Retry sector 123", now.AddMinutes(-2), "Warning"),
+        Row(153, "disk", "Retry sector 123", now, "Error"),
+        Row(153, "disk", "Retry sector 456", now, "Error"),
+        Row(1000, "Application Error", "App failed", now, "Error"),
+        Row(2, "Provider", "Failure\nDevice 01234567-89ab-cdef-0123-456789abcdef status 0xabcdef12", now, "Error"),
+        Row(2, "Provider", "Failure\nDevice fedcba98-7654-3210-fedc-ba9876543210 status 0x12345678", now, "Error")
     ]);
-    Assert(groups.Count == 5 && groups.Any(group => group.Problem == "磁碟 I/O 重試" && group.Count == 2 && group.Severity == "錯誤") &&
+    Assert(groups.Count == 5 && groups.Any(group => group.Problem == "Disk I/O retry" && group.Count == 2 && group.Severity == "Error") &&
            groups.Count(group => group.Provider == "disk") == 2 && groups.Count(group => group.Provider == "Provider") == 2);
 }
 
@@ -284,16 +306,16 @@ static void TestProblemSummary()
     var group = ProblemGrouping.Group([Row(153, "disk", "Retry sector 1", new DateTime(2026, 8, 24, 8, 14, 0))])[0];
     var summary = MainWindow.FormatSummary(group);
     Assert(summary.Contains("Event ID: 153") && summary.Contains("Provider: disk") &&
-           summary.Contains("First Seen: 2026-08-24 08:14:00") && summary.Contains("Last Seen: 2026-08-24 08:14:00"));
+           summary.Contains("First seen: 2026-08-24 08:14:00") && summary.Contains("Last seen: 2026-08-24 08:14:00"));
 }
 
 static void TestEventDetailsLayout()
 {
-    var row = Row(17, "Microsoft-Windows-WHEA-Logger", "payload", new DateTime(2026, 8, 24, 22, 45, 57), "警告");
+    var row = Row(17, "Microsoft-Windows-WHEA-Logger", "payload", new DateTime(2026, 8, 24, 22, 45, 57), "Warning");
     var group = ProblemGrouping.Group([row])[0];
     var details = MainWindow.FormatDetails(group, row, "發生已修正的硬體錯誤。", "<Event />");
-    Assert(details.Contains("事件資訊") && details.Contains("時間：2026-08-24 22:45:57") &&
-           details.Contains("Event ID：17") && details.Contains("事件訊息") && details.Contains("原始 XML"));
+    Assert(details.Contains("Event information") && details.Contains("Time: 2026-08-24 22:45:57") &&
+           details.Contains("Event ID: 17") && details.Contains("Event message") && details.Contains("Raw XML"));
 }
 
 static void TestProblemSearchUrl()
@@ -301,7 +323,7 @@ static void TestProblemSearchUrl()
     var row = Row(17, "A&B Provider", "payload");
     var uri = MainWindow.BuildProblemSearchUri(ProblemGrouping.Group([row])[0]);
     Assert(uri.Scheme == Uri.UriSchemeHttps && uri.Host == "www.google.com" && uri.Query.Contains("%26") &&
-           Uri.UnescapeDataString(uri.Query).Contains("Event ID 17 A&B Provider Windows 可能原因"));
+           Uri.UnescapeDataString(uri.Query).Contains("Event ID 17 A&B Provider Windows possible causes fix"));
 }
 
 static void TestCancelledExport()
@@ -490,6 +512,12 @@ static void TestUiQueryCompletion()
             var eventsGrid = (DataGrid)window.FindName("EventsGrid");
             var occurrencesGrid = (DataGrid)window.FindName("OccurrencesGrid");
             var detailsBox = (TextBox)window.FindName("DetailsBox");
+            var searchButton = (Button)window.FindName("SearchButton");
+            Assert(searchButton.Content.ToString() == "Search");
+            AppLocalization.UseLanguage("zh-TW");
+            Assert(searchButton.Content.ToString() == "搜尋");
+            AppLocalization.UseLanguage("en");
+            Assert(searchButton.Content.ToString() == "Search");
             var sampleRows = new[]
             {
                 Row(153, "disk", "Retry sector 1"),
@@ -514,8 +542,8 @@ static void TestUiQueryCompletion()
             timer.Tick += (_, _) =>
             {
                 var status = ((TextBlock)window.FindName("StatusText")).Text;
-                var searchEnabled = ((Button)window.FindName("SearchButton")).IsEnabled;
-                if (searchEnabled && !status.Contains("查詢中", StringComparison.Ordinal))
+                var searchEnabled = searchButton.IsEnabled;
+                if (searchEnabled && !status.Contains("Querying", StringComparison.Ordinal))
                 {
                     var eventIds = eventsGrid.Items.Cast<ProblemGroup>().Select(group => group.EventId).ToArray();
                     Assert(eventIds.SequenceEqual(eventIds.Order()));
@@ -552,16 +580,16 @@ static void TestUiQueryCompletion()
         throw failure;
 }
 
-static EventRow Row(int id, string provider, string details, DateTime? time = null, string level = "錯誤") =>
+static EventRow Row(int id, string provider, string details, DateTime? time = null, string level = "Error") =>
     new(time ?? DateTime.Now, level, id, provider, "System", id, "PC", details, "<Event />");
 
 static int LevelNumber(string level) => level switch
 {
-    "嚴重" => 1,
-    "錯誤" => 2,
-    "警告" => 3,
-    "資訊" => 4,
-    "詳細" => 5,
+    "Critical" => 1,
+    "Error" => 2,
+    "Warning" => 3,
+    "Information" => 4,
+    "Verbose" => 5,
     _ => 0
 };
 

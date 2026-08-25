@@ -18,18 +18,18 @@ internal static class EventQuery
 {
     internal static readonly IReadOnlyDictionary<string, QuickQuery> QuickQueries = new Dictionary<string, QuickQuery>
     {
-        ["all"] = new("全部問題", [], []),
-        ["system"] = new("系統錯誤", [], [], ["System"]),
-        ["crash"] = new("程式崩潰", ["Application Error", ".NET Runtime", "Windows Error Reporting"], [1000, 1001, 1026], ["Application"]),
-        ["disk"] = new("磁碟 / SSD / NVMe", ["disk", "storahci", "stornvme", "storport", "Ntfs", "Microsoft-Windows-Ntfs", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 55, 98, 129, 140, 153, 157], ["System"]),
-        ["ntfs"] = new("NTFS / 檔案系統", ["Ntfs", "Microsoft-Windows-Ntfs"], [55, 98, 140], ["System"]),
-        ["usb"] = new("USB / USB-C", ["USBHUB", "USBXHCI", "Microsoft-Windows-USB-USBHUB3", "Microsoft-Windows-USB-USBXHCI", "UCSI", "UcmUcsiCx", "Microsoft-Windows-DriverFrameworks-UserMode"], [10110, 10111], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
-        ["device"] = new("裝置", ["Microsoft-Windows-Kernel-PnP", "Kernel-PnP"], [219, 225, 411], ["System", "Microsoft-Windows-Kernel-PnP/Configuration"]),
-        ["driver"] = new("驅動程式", ["Microsoft-Windows-Kernel-PnP", "Service Control Manager"], [219, 7000, 7001, 7026], ["System"]),
-        ["whea"] = new("硬體 / WHEA", ["Microsoft-Windows-WHEA-Logger", "WHEA-Logger"], [1, 17, 18, 19, 20, 46, 47], ["System"]),
-        ["network"] = new("網路", ["Tcpip", "Microsoft-Windows-DNS-Client", "Microsoft-Windows-NetworkProfile"], [4201, 1014, 10000, 10001], ["System", "Microsoft-Windows-WLAN-AutoConfig/Operational"]),
-        ["update"] = new("Windows Update", ["Microsoft-Windows-WindowsUpdateClient"], [19, 20, 25, 31, 34], ["System", "Microsoft-Windows-WindowsUpdateClient/Operational"]),
-        ["power"] = new("電源 / 異常關機", ["Microsoft-Windows-Kernel-Power", "EventLog"], [41, 6008], ["System"])
+        ["all"] = new("QuickAll", [], []),
+        ["system"] = new("QuickSystem", [], [], ["System"]),
+        ["crash"] = new("QuickCrash", ["Application Error", ".NET Runtime", "Windows Error Reporting"], [1000, 1001, 1026], ["Application"]),
+        ["disk"] = new("QuickDisk", ["disk", "storahci", "stornvme", "storport", "Ntfs", "Microsoft-Windows-Ntfs", "volmgr", "volsnap", "partmgr", "Microsoft-Windows-Kernel-Storage"], [7, 11, 51, 55, 98, 129, 140, 153, 157], ["System"]),
+        ["ntfs"] = new("QuickNtfs", ["Ntfs", "Microsoft-Windows-Ntfs"], [55, 98, 140], ["System"]),
+        ["usb"] = new("QuickUsb", ["USBHUB", "USBXHCI", "Microsoft-Windows-USB-USBHUB3", "Microsoft-Windows-USB-USBXHCI", "UCSI", "UcmUcsiCx", "Microsoft-Windows-DriverFrameworks-UserMode"], [10110, 10111], ["System", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"]),
+        ["device"] = new("QuickDevice", ["Microsoft-Windows-Kernel-PnP", "Kernel-PnP"], [219, 225, 411], ["System", "Microsoft-Windows-Kernel-PnP/Configuration"]),
+        ["driver"] = new("QuickDriver", ["Microsoft-Windows-Kernel-PnP", "Service Control Manager"], [219, 7000, 7001, 7026], ["System"]),
+        ["whea"] = new("QuickWhea", ["Microsoft-Windows-WHEA-Logger", "WHEA-Logger"], [1, 17, 18, 19, 20, 46, 47], ["System"]),
+        ["network"] = new("QuickNetwork", ["Tcpip", "Microsoft-Windows-DNS-Client", "Microsoft-Windows-NetworkProfile"], [4201, 1014, 10000, 10001], ["System", "Microsoft-Windows-WLAN-AutoConfig/Operational"]),
+        ["update"] = new("QuickUpdate", ["Microsoft-Windows-WindowsUpdateClient"], [19, 20, 25, 31, 34], ["System", "Microsoft-Windows-WindowsUpdateClient/Operational"]),
+        ["power"] = new("QuickPower", ["Microsoft-Windows-Kernel-Power", "EventLog"], [41, 6008], ["System"])
     };
 
     internal static QueryCriteria Parse(string search, int maximumLevel, TimeSpan period, string? provider = null)
@@ -92,7 +92,7 @@ internal static class EventQuery
             return $"'{value}'";
         if (!value.Contains('"'))
             return $"\"{value}\"";
-        throw new ArgumentException("Provider 不可同時包含單引號與雙引號。", nameof(value));
+        throw new ArgumentException(Localization.Text("ProviderQuotes"), nameof(value));
     }
 
     private static string Utc(DateTime value) => value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ", CultureInfo.InvariantCulture);
@@ -105,7 +105,7 @@ internal static class EventQuery
             throw new InvalidOperationException("Mixed query self-test failed.");
 
         var quick = FromQuick(QuickQueries["power"], 2, TimeSpan.FromHours(1));
-        if (!BuildXPath(quick).Contains("EventID=41") || !Matches(new(DateTime.Now, "錯誤", 41, "x", "System", 1, "", "", ""), quick))
+        if (!BuildXPath(quick).Contains("EventID=41") || !Matches(new(DateTime.Now, "Error", 41, "x", "System", 1, "", "", ""), quick))
             throw new InvalidOperationException("Quick query self-test failed.");
 
         var custom = mixed with { From = new DateTime(2026, 1, 1), To = new DateTime(2026, 1, 2) };

@@ -9,6 +9,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Localization.Initialize();
 
         if (e.Args.Contains("--self-test"))
         {
@@ -85,12 +86,12 @@ internal sealed record StartupOptions(
                 case "--hours":
                     hours = PositiveInteger(args, ref index, "--hours");
                     if (hours > TimeSpan.MaxValue.TotalHours)
-                        throw new ArgumentException("--hours 數值過大。");
+                        throw new ArgumentException(Localization.Text("HoursTooLarge"));
                     break;
                 case "--event-id":
                     eventId = PositiveInteger(args, ref index, "--event-id");
                     if (eventId > ushort.MaxValue)
-                        throw new ArgumentException("--event-id 必須介於 1 到 65535。");
+                        throw new ArgumentException(Localization.Text("EventIdRange"));
                     break;
                 case "--query":
                     query = Value(args, ref index, "--query");
@@ -106,42 +107,42 @@ internal sealed record StartupOptions(
                     break;
                 case "--level":
                     if (!int.TryParse(Value(args, ref index, "--level"), NumberStyles.None, CultureInfo.InvariantCulture, out var level) || level is < 0 or > 3)
-                        throw new ArgumentException("--level 必須介於 0 到 3。");
+                        throw new ArgumentException(Localization.Text("LevelRange"));
                     maximumLevel = level;
                     break;
                 case "--channel":
                     var channel = Value(args, ref index, "--channel");
                     if (channel is not "System" and not "Application")
-                        throw new ArgumentException("--channel 僅支援 System 或 Application。");
+                        throw new ArgumentException(Localization.Text("ChannelRange"));
                     if (!channels.Contains(channel, StringComparer.OrdinalIgnoreCase))
                         channels.Add(channel);
                     break;
                 case "--sort":
                     sort = Value(args, ref index, "--sort");
                     if (sort is not ("default" or "latest" or "oldest" or "frequent" or "eventId" or "provider"))
-                        throw new ArgumentException("--sort 值無效。");
+                        throw new ArgumentException(Localization.Text("InvalidSort"));
                     break;
                 case "--quick":
                     quick = Value(args, ref index, "--quick");
                     if (!EventQuery.QuickQueries.ContainsKey(quick))
-                        throw new ArgumentException("--quick 值無效。");
+                        throw new ArgumentException(Localization.Text("InvalidQuick"));
                     break;
                 default:
                     if (args[index].StartsWith("--", StringComparison.Ordinal))
-                        throw new ArgumentException($"不支援的啟動參數：{args[index]}");
+                        throw new ArgumentException(Localization.Format("UnsupportedArgument", args[index]));
                     if (!File.Exists(args[index]) || !Path.GetExtension(args[index]).Equals(".evtx", StringComparison.OrdinalIgnoreCase))
-                        throw new ArgumentException($"找不到 EVTX 檔案：{args[index]}");
+                        throw new ArgumentException(Localization.Format("EvtxNotFound", args[index]));
                     eventFile = Path.GetFullPath(args[index]);
                     break;
             }
         }
 
         if ((from is null) != (to is null))
-            throw new ArgumentException("--from 與 --to 必須同時使用。");
+            throw new ArgumentException(Localization.Text("FromToTogether"));
         if (from is { } start && to is { } end && start > end)
-            throw new ArgumentException("--from 不可晚於 --to。");
+            throw new ArgumentException(Localization.Text("FromAfterTo"));
         if ((today ? 1 : 0) + (hours is not null ? 1 : 0) + (allTime ? 1 : 0) + (from is not null ? 1 : 0) > 1)
-            throw new ArgumentException("時間範圍參數不可同時使用。");
+            throw new ArgumentException(Localization.Text("ConflictingTime"));
         return new(eventFile, today, hours, eventId, query, provider, allTime, from, to, maximumLevel,
             channels.Count == 0 ? null : channels, sort, quick);
     }
@@ -171,7 +172,7 @@ internal sealed record StartupOptions(
     {
         var value = Value(args, ref index, option);
         if (!int.TryParse(value, out var number) || number <= 0)
-            throw new ArgumentException($"{option} 必須接正整數。");
+            throw new ArgumentException(Localization.Format("PositiveInteger", option));
         return number;
     }
 
@@ -179,7 +180,7 @@ internal sealed record StartupOptions(
     {
         if (!DateTime.TryParseExact(Value(args, ref index, option), "yyyy-MM-dd", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var date))
-            throw new ArgumentException($"{option} 必須使用 yyyy-MM-dd 格式。");
+            throw new ArgumentException(Localization.Format("DateFormat", option));
         return date;
     }
 
@@ -200,7 +201,7 @@ internal sealed record StartupOptions(
     private static string Value(IReadOnlyList<string> args, ref int index, string option)
     {
         if (++index >= args.Count || string.IsNullOrWhiteSpace(args[index]) || args[index].StartsWith("--", StringComparison.Ordinal))
-            throw new ArgumentException($"{option} 缺少值。");
+            throw new ArgumentException(Localization.Format("MissingValue", option));
         return args[index];
     }
 }

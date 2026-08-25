@@ -67,7 +67,7 @@ if (args.Contains("--large"))
     foreach (var count in new[] { 10_000, 100_000, 500_000, 1_000_000 })
     {
         var rows = Enumerable.Range(0, count).Select(index => new EventRow(
-            DateTime.Now.AddSeconds(-index), index % 20 == 0 ? "嚴重" : index % 3 == 0 ? "警告" : "錯誤",
+            DateTime.Now.AddSeconds(-index), index % 20 == 0 ? "Critical" : index % 3 == 0 ? "Warning" : "Error",
             1000 + index % 50, $"Provider-{index % 10}", "System", index, "PC", $"Synthetic event {index}", "<Event />")).ToArray();
         var stopwatch = Stopwatch.StartNew();
         var groups = ProblemGrouping.Group(rows);

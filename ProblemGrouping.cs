@@ -20,11 +20,11 @@ internal static class ProblemClassifier
     internal static string Classify(string provider, int eventId) =>
         provider switch
         {
-            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 153 => "磁碟 I/O 重試",
-            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 51 => "磁碟 I/O 發生錯誤",
-            var p when p.EndsWith("Kernel-Power", StringComparison.OrdinalIgnoreCase) && eventId == 41 => "非正常關機 / 電源異常",
-            var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1000 => "應用程式崩潰",
-            var p when p.Contains("WHEA-Logger", StringComparison.OrdinalIgnoreCase) => "WHEA 硬體錯誤事件",
+            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 153 => Localization.Text("ProblemDiskRetry"),
+            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 51 => Localization.Text("ProblemDiskError"),
+            var p when p.EndsWith("Kernel-Power", StringComparison.OrdinalIgnoreCase) && eventId == 41 => Localization.Text("ProblemUnexpectedShutdown"),
+            var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1000 => Localization.Text("ProblemAppCrash"),
+            var p when p.Contains("WHEA-Logger", StringComparison.OrdinalIgnoreCase) => Localization.Text("ProblemWhea"),
             _ => $"{provider} + Event ID {eventId}"
         };
 }
@@ -53,7 +53,7 @@ internal static class ProblemGrouping
                     string.Join(", ", channels),
                     events);
             })
-            .OrderByDescending(group => SeverityRank(group.Severity))
+            .OrderByDescending(group => group.Events.Max(row => SeverityRank(row.Level)))
             .ThenByDescending(group => group.Count)
             .ThenByDescending(group => group.LastSeen)
             .ToArray();
@@ -64,13 +64,13 @@ internal static class ProblemGrouping
         var now = DateTime.Now;
         var rows = new[]
         {
-            new EventRow(now.AddMinutes(-2), "錯誤", 41, "Microsoft-Windows-Kernel-Power", "System", 1, "PC", "Unexpected 123", ""),
-            new EventRow(now, "嚴重", 41, "Microsoft-Windows-Kernel-Power", "System", 2, "PC", "Unexpected 123", ""),
-            new EventRow(now, "錯誤", 1000, "Application Error", "Application", 3, "PC", "App failed", "")
+            new EventRow(now.AddMinutes(-2), "Error", 41, "Microsoft-Windows-Kernel-Power", "System", 1, "PC", "Unexpected 123", ""),
+            new EventRow(now, "Critical", 41, "Microsoft-Windows-Kernel-Power", "System", 2, "PC", "Unexpected 123", ""),
+            new EventRow(now, "Error", 1000, "Application Error", "Application", 3, "PC", "App failed", "")
         };
 
         var groups = Group(rows);
-        if (groups.Count != 2 || groups[0].Problem != "非正常關機 / 電源異常" || groups[0].Count != 2 || groups[0].FirstSeen != now.AddMinutes(-2))
+        if (groups.Count != 2 || groups[0].Problem != Localization.Text("ProblemUnexpectedShutdown") || groups[0].Count != 2 || groups[0].FirstSeen != now.AddMinutes(-2))
             throw new InvalidOperationException("Problem grouping self-test failed.");
     }
 
@@ -78,21 +78,21 @@ internal static class ProblemGrouping
 
     private static string SeverityLabel(string level) => level switch
     {
-        "嚴重" => "嚴重",
-        "錯誤" => "錯誤",
-        "警告" => "警告",
-        "資訊" => "資訊",
-        "詳細" => "詳細",
-        _ => "未知"
+        "Critical" => Localization.Level("Critical"),
+        "Error" => Localization.Level("Error"),
+        "Warning" => Localization.Level("Warning"),
+        "Information" => Localization.Level("Information"),
+        "Verbose" => Localization.Level("Verbose"),
+        _ => Localization.Level("Unknown")
     };
 
     private static int SeverityRank(string level) => level switch
     {
-        "嚴重" => 5,
-        "錯誤" => 4,
-        "警告" => 3,
-        "資訊" => 2,
-        "詳細" => 1,
+        "Critical" => 5,
+        "Error" => 4,
+        "Warning" => 3,
+        "Information" => 2,
+        "Verbose" => 1,
         _ => 0
     };
 

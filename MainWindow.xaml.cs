@@ -24,6 +24,8 @@ public partial class MainWindow : Window, IDisposable
     internal MainWindow(StartupOptions? options = null)
     {
         InitializeComponent();
+        LanguageBox.SelectedItem = LanguageBox.Items.OfType<ComboBoxItem>()
+            .First(item => item.Tag.ToString() == Localization.Instance.CurrentLanguage);
         FromDate.SelectedDate = DateTime.Today.AddDays(-1);
         ToDate.SelectedDate = DateTime.Today;
         options ??= new();
@@ -46,7 +48,7 @@ public partial class MainWindow : Window, IDisposable
             var item = TimeBox.Items.OfType<ComboBoxItem>().FirstOrDefault(candidate => candidate.Tag.ToString() == tag);
             if (item is null)
             {
-                item = new ComboBoxItem { Tag = tag, Content = $"最近 {hours:N0} 小時" };
+                item = new ComboBoxItem { Tag = tag, Content = Localization.Format("LastHours", hours) };
                 TimeBox.Items.Insert(TimeBox.Items.Count - 1, item);
             }
             TimeBox.SelectedItem = item;
@@ -95,7 +97,7 @@ public partial class MainWindow : Window, IDisposable
 
         if (channels.Length == 0)
         {
-            StatusText.Text = "請至少選擇一個 Channel。";
+            StatusText.Text = Localization.Text("SelectChannel");
             return;
         }
 
@@ -106,7 +108,7 @@ public partial class MainWindow : Window, IDisposable
         SearchButton.IsEnabled = false;
         ExportButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
-        StatusText.Text = quick is null ? "查詢中…" : $"查詢「{quick.Name}」…";
+        StatusText.Text = quick is null ? Localization.Text("Querying") : Localization.Format("QueryingNamed", Localization.Text(quick.Name));
 
         try
         {
@@ -118,7 +120,7 @@ public partial class MainWindow : Window, IDisposable
             if (((ComboBoxItem)TimeBox.SelectedItem).Tag.ToString() == "custom")
             {
                 if (FromDate.SelectedDate is not { } from || ToDate.SelectedDate is not { } to || from > to)
-                    throw new InvalidOperationException("請選擇有效的自訂起訖日期。");
+                    throw new InvalidOperationException(Localization.Text("InvalidCustomDates"));
                 criteria = criteria with { From = from, To = to.AddDays(1).AddTicks(-1) };
             }
             var xpath = EventQuery.BuildXPath(criteria);
@@ -132,7 +134,7 @@ public partial class MainWindow : Window, IDisposable
                         return;
                     previewRows.AddRange(filtered);
                     EventsGrid.ItemsSource = ProblemGrouping.Group(previewRows);
-                    StatusText.Text = $"已顯示第一批 {previewRows.Count:N0} 筆 · 背景查詢中…";
+                    StatusText.Text = Localization.Format("FirstBatch", previewRows.Count);
                 });
             }
             var tasks = channels.Select(channel => Task.Run(() =>
@@ -166,14 +168,15 @@ public partial class MainWindow : Window, IDisposable
             var firstError = results.Select(result => result.Error).FirstOrDefault(error => error is not null);
             AdminButton.Visibility = results.Any(result => result.RequiresAdmin) ? Visibility.Visible : Visibility.Collapsed;
             StatusText.ToolTip = string.Join(Environment.NewLine, results.Select(result => result.Error).OfType<string>());
-            var levels = $"嚴重 {rows.Count(row => row.Level == "嚴重"):N0} · 錯誤 {rows.Count(row => row.Level == "錯誤"):N0} · 警告 {rows.Count(row => row.Level == "警告"):N0}";
-            StatusText.Text = $"掃描 {allRows.Length:N0} 筆 · 符合 {rows.Length:N0} 筆 · {levels} · 合併 {groups.Count:N0} 類" +
-                              (errors > 0 ? $" · 略過 {errors} 個 Channel：{firstError}" : "");
+            StatusText.Text = Localization.Format("QuerySummary", allRows.Length, rows.Length,
+                                  rows.Count(row => row.Level == "Critical"), rows.Count(row => row.Level == "Error"),
+                                  rows.Count(row => row.Level == "Warning"), groups.Count) +
+                              (errors > 0 ? Localization.Format("SkippedChannels", errors, firstError) : "");
         }
         catch (OperationCanceledException)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = "查詢已取消。";
+                StatusText.Text = Localization.Text("QueryCancelled");
         }
         catch (Exception exception)
         {
@@ -198,7 +201,7 @@ public partial class MainWindow : Window, IDisposable
         if (!e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } files ||
             !Path.GetExtension(files[0]).Equals(".evtx", StringComparison.OrdinalIgnoreCase))
         {
-            StatusText.Text = "請拖入 .evtx 事件記錄檔。";
+            StatusText.Text = Localization.Text("DropEvtx");
             return;
         }
 
@@ -222,7 +225,7 @@ public partial class MainWindow : Window, IDisposable
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            StatusText.Text = "已取消以系統管理員身分重新啟動。";
+            StatusText.Text = Localization.Text("AdminCancelled");
         }
     }
 
@@ -251,13 +254,13 @@ public partial class MainWindow : Window, IDisposable
     {
         if (((ComboBoxItem)ExportScopeBox.SelectedItem).Tag.ToString() == "selected" && EventsGrid.SelectedItem is not ProblemGroup)
         {
-            StatusText.Text = "請先選取一個問題。";
+            StatusText.Text = Localization.Text("SelectProblem");
             return;
         }
 
         var dialog = new SaveFileDialog
         {
-            Filter = "Excel 活頁簿 (*.xlsx)|*.xlsx",
+            Filter = Localization.Text("ExcelFilter"),
             FileName = $"EventFast-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx",
             DefaultExt = ".xlsx"
         };
@@ -270,7 +273,7 @@ public partial class MainWindow : Window, IDisposable
         _operationCancellation?.Dispose();
         var operation = _operationCancellation = new CancellationTokenSource();
         CancelButton.IsEnabled = true;
-        StatusText.Text = "正在匯出 Excel…";
+        StatusText.Text = Localization.Text("Exporting");
         try
         {
             var scope = ((ComboBoxItem)ExportScopeBox.SelectedItem).Tag.ToString();
@@ -278,7 +281,7 @@ public partial class MainWindow : Window, IDisposable
             {
                 "all" => _allRows,
                 "selected" when EventsGrid.SelectedItem is ProblemGroup group => group.Events,
-                "selected" => throw new InvalidOperationException("請先選取一個問題。"),
+                "selected" => throw new InvalidOperationException(Localization.Text("SelectProblem")),
                 _ => _rows
             };
             var groups = scope == "current" ? _groups : ProblemGrouping.Group(rows);
@@ -288,22 +291,22 @@ public partial class MainWindow : Window, IDisposable
                 using var formatter = WindowsEventReader.CreateMessageFormatter();
                 XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, row => formatter.ReadContent(row, includeXml), operation.Token);
             }, operation.Token);
-            StatusText.Text = $"已匯出 {Path.GetFileName(dialog.FileName)}";
+            StatusText.Text = Localization.Format("Exported", Path.GetFileName(dialog.FileName));
         }
         catch (OperationCanceledException)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = "匯出已取消。";
+                StatusText.Text = Localization.Text("ExportCancelled");
         }
         catch (IOException exception) when ((exception.HResult & 0xffff) == 112)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = "磁碟空間不足，Excel 匯出失敗。";
+                StatusText.Text = Localization.Text("DiskFull");
         }
         catch (Exception exception)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = $"匯出失敗：{exception.Message}";
+                StatusText.Text = Localization.Format("ExportFailed", exception.Message);
         }
         finally
         {
@@ -421,6 +424,18 @@ public partial class MainWindow : Window, IDisposable
             CustomTimePanel.Visibility = item.Tag.ToString() == "custom" ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void Language_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (LanguageBox.SelectedItem is not ComboBoxItem item || item.Tag.ToString() == Localization.Instance.CurrentLanguage)
+            return;
+
+        Localization.SetLanguage(item.Tag.ToString()!);
+        _groups = ProblemGrouping.Group(_rows);
+        EventsGrid.SelectedItem = null;
+        ApplySort();
+        StatusText.Text = Localization.Text("LanguageChanged");
+    }
+
     private void EventsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         DetailsBox.Text = "";
@@ -428,13 +443,13 @@ public partial class MainWindow : Window, IDisposable
         if (EventsGrid.SelectedItem is ProblemGroup group)
         {
             OccurrencesGrid.ItemsSource = group.Events;
-            OccurrencesTab.Header = $"群組事件 ({group.Count:N0})";
+            OccurrencesTab.Header = Localization.Format("GroupedEventsCount", group.Count);
             DetailsTabs.SelectedIndex = 0;
         }
         else
         {
             OccurrencesGrid.ItemsSource = null;
-            OccurrencesTab.Header = "群組事件";
+            OccurrencesTab.Header = Localization.Text("GroupedEvents");
         }
     }
 
@@ -463,13 +478,13 @@ public partial class MainWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            StatusText.Text = $"無法開啟瀏覽器：{exception.Message}";
+            StatusText.Text = Localization.Format("BrowserFailed", exception.Message);
         }
     }
 
     internal static Uri BuildProblemSearchUri(ProblemGroup group)
     {
-        var query = $"{group.Problem} Event ID {group.EventId} {group.Provider} Windows 可能原因";
+        var query = $"{group.Problem} Event ID {group.EventId} {group.Provider} {Localization.Text("CauseSearchSuffix")}";
         return new Uri($"https://www.google.com/search?q={Uri.EscapeDataString(query)}");
     }
 
@@ -486,7 +501,7 @@ public partial class MainWindow : Window, IDisposable
 
         var row = selectedRow ?? group.Events[^1];
         DetailsTabs.SelectedIndex = 1;
-        DetailsBox.Text = "正在載入完整事件訊息…";
+        DetailsBox.Text = Localization.Text("LoadingDetails");
         (string Message, string Xml) content;
         try
         {
@@ -499,7 +514,7 @@ public partial class MainWindow : Window, IDisposable
         catch (Exception exception)
         {
             if (ReferenceEquals(EventsGrid.SelectedItem, group))
-                DetailsBox.Text = $"{FormatSummary(group)}{Environment.NewLine}{Environment.NewLine}無法載入完整事件：{exception.Message}";
+                DetailsBox.Text = $"{FormatSummary(group)}{Environment.NewLine}{Environment.NewLine}{Localization.Format("LoadDetailsFailed", exception.Message)}";
             return;
         }
         if (!ReferenceEquals(EventsGrid.SelectedItem, group))
@@ -512,21 +527,21 @@ public partial class MainWindow : Window, IDisposable
     {
         var line = Environment.NewLine;
         return
-            $"【問題摘要】{line}" +
+            $"{Localization.Text("SummaryHeading")}{line}" +
             $"{group.Problem}{line}" +
-            $"發生次數：{group.Count:N0}{line}" +
-            $"首次發生：{group.FirstSeen:yyyy-MM-dd HH:mm:ss}{line}" +
-            $"最後發生：{group.LastSeen:yyyy-MM-dd HH:mm:ss}{line}{line}" +
-            $"【事件資訊】{line}" +
-            $"時間：{row.Time:yyyy-MM-dd HH:mm:ss}{line}" +
-            $"等級：{row.Level}{line}" +
-            $"Event ID：{row.EventId}{line}" +
-            $"Provider：{row.Provider}{line}" +
-            $"Channel：{row.Channel}{line}" +
-            $"Computer：{row.Computer}{line}" +
-            $"Record ID：{row.RecordId}{line}{line}" +
-            $"【事件訊息】{line}{message.Trim()}{line}{line}" +
-            $"【原始 XML】{line}{xml.Trim()}";
+            $"{Localization.Text("Occurrences")}: {group.Count:N0}{line}" +
+            $"{Localization.Text("FirstSeen")}: {group.FirstSeen:yyyy-MM-dd HH:mm:ss}{line}" +
+            $"{Localization.Text("LastSeen")}: {group.LastSeen:yyyy-MM-dd HH:mm:ss}{line}{line}" +
+            $"{Localization.Text("EventInfoHeading")}{line}" +
+            $"{Localization.Text("ColumnTime")}: {row.Time:yyyy-MM-dd HH:mm:ss}{line}" +
+            $"{Localization.Text("ColumnSeverity")}: {row.DisplayLevel}{line}" +
+            $"Event ID: {row.EventId}{line}" +
+            $"{Localization.Text("Provider")}: {row.Provider}{line}" +
+            $"{Localization.Text("Channel")}: {row.Channel}{line}" +
+            $"{Localization.Text("Computer")}: {row.Computer}{line}" +
+            $"{Localization.Text("RecordId")}: {row.RecordId}{line}{line}" +
+            $"{Localization.Text("EventMessageHeading")}{line}{message.Trim()}{line}{line}" +
+            $"{Localization.Text("RawXmlHeading")}{line}{xml.Trim()}";
     }
 
     private void CopyProblem_Click(object sender, RoutedEventArgs e)
@@ -539,9 +554,9 @@ public partial class MainWindow : Window, IDisposable
         $"{group.Problem}{Environment.NewLine}" +
         $"Event ID: {group.EventId}{Environment.NewLine}" +
         $"Provider: {group.Provider}{Environment.NewLine}" +
-        $"Count: {group.Count:N0}{Environment.NewLine}" +
-        $"First Seen: {group.FirstSeen:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}" +
-        $"Last Seen: {group.LastSeen:yyyy-MM-dd HH:mm:ss}";
+        $"{Localization.Text("Count")}: {group.Count:N0}{Environment.NewLine}" +
+        $"{Localization.Text("FirstSeen")}: {group.FirstSeen:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}" +
+        $"{Localization.Text("LastSeen")}: {group.LastSeen:yyyy-MM-dd HH:mm:ss}";
 
     private void CopyFull_Click(object sender, RoutedEventArgs e)
     {
