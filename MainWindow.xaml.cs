@@ -107,7 +107,7 @@ public partial class MainWindow : Window, IDisposable
 
         if (channels.Length == 0)
         {
-            StatusText.Text = Localization.Text("SelectChannel");
+            SetOperationStatus(() => Localization.Text("SelectChannel"));
             return;
         }
 
@@ -121,6 +121,7 @@ public partial class MainWindow : Window, IDisposable
         SetOperationStatus(() => quick is null
             ? Localization.Text("Querying")
             : Localization.Format("QueryingNamed", Localization.Text(quick.Name)));
+        var queryCompleted = false;
 
         try
         {
@@ -142,7 +143,7 @@ public partial class MainWindow : Window, IDisposable
                 var filtered = batch.Where(row => EventQuery.Matches(row, criteria)).ToArray();
                 Dispatcher.BeginInvoke(() =>
                 {
-                    if (token.IsCancellationRequested)
+                    if (!CanShowFirstBatch(_operationCancellation, operation, queryCompleted, token))
                         return;
                     previewRows.AddRange(filtered);
                     EventsGrid.ItemsSource = ProblemGrouping.Group(previewRows);
@@ -171,6 +172,7 @@ public partial class MainWindow : Window, IDisposable
             token.ThrowIfCancellationRequested();
             var groups = ProblemGrouping.Group(rows);
             token.ThrowIfCancellationRequested();
+            queryCompleted = true;
             _rows = rows;
             _allRows = allRows;
             _groups = groups;
@@ -180,27 +182,26 @@ public partial class MainWindow : Window, IDisposable
             var firstError = results.Select(result => result.Error).FirstOrDefault(error => error is not null);
             AdminButton.Visibility = results.Any(result => result.RequiresAdmin) ? Visibility.Visible : Visibility.Collapsed;
             StatusText.ToolTip = string.Join(Environment.NewLine, results.Select(result => result.Error).OfType<string>());
-            StatusText.Text = Localization.Format("QuerySummary", allRows.Length, rows.Length,
-                                  rows.Count(row => row.Level == "Critical"), rows.Count(row => row.Level == "Error"),
-                                  rows.Count(row => row.Level == "Warning"), groups.Count) +
-                              (errors > 0 ? Localization.Format("SkippedChannels", errors, firstError) : "");
+            SetOperationStatus(() => Localization.Format("QuerySummary", allRows.Length, rows.Length,
+                                     rows.Count(row => row.Level == "Critical"), rows.Count(row => row.Level == "Error"),
+                                     rows.Count(row => row.Level == "Warning"), groups.Count) +
+                                 (errors > 0 ? Localization.Format("SkippedChannels", errors, firstError) : ""));
         }
         catch (OperationCanceledException)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = Localization.Text("QueryCancelled");
+                SetOperationStatus(() => Localization.Text("QueryCancelled"));
         }
         catch (Exception exception)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = exception.Message;
+                SetOperationStatus(() => exception.Message);
         }
         finally
         {
             if (ReferenceEquals(_operationCancellation, operation))
             {
                 _operationCancellation = null;
-                _operationStatus = null;
                 operation.Dispose();
                 SearchButton.IsEnabled = true;
                 CancelButton.IsEnabled = false;
@@ -208,6 +209,10 @@ public partial class MainWindow : Window, IDisposable
             }
         }
     }
+
+    internal static bool CanShowFirstBatch(CancellationTokenSource? current, CancellationTokenSource operation,
+        bool queryCompleted, CancellationToken token) =>
+        !token.IsCancellationRequested && ReferenceEquals(current, operation) && !queryCompleted;
 
     private async void Window_Drop(object sender, DragEventArgs e)
     {

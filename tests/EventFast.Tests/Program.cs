@@ -17,6 +17,7 @@ var tests = new (string Name, Action Run)[]
     ("XPath/time/level filters", TestXPath),
     ("Keyword and Event ID filters", TestFilters),
     ("Provider-aware quick filters", TestQuickFilters),
+    ("Query first-batch lifecycle", TestQueryFirstBatchLifecycle),
     ("Grouping/classifier/sorting", TestGrouping),
     ("Problem summary", TestProblemSummary),
     ("Event details layout", TestEventDetailsLayout),
@@ -294,6 +295,17 @@ static void TestQuickFilters()
            ProblemClassifier.Classify("USBHUB", 7) == "USB / UCSI event" &&
            ProblemClassifier.Classify("Microsoft-Windows-WindowsUpdateClient", 19) == "Windows Update installation succeeded" &&
            ProblemClassifier.Classify("Fake-USB-Provider", 7) == "Fake-USB-Provider + Event ID 7");
+}
+
+static void TestQueryFirstBatchLifecycle()
+{
+    using var operation = new CancellationTokenSource();
+    using var newerOperation = new CancellationTokenSource();
+    Assert(MainWindow.CanShowFirstBatch(operation, operation, false, operation.Token));
+    Assert(!MainWindow.CanShowFirstBatch(operation, operation, true, operation.Token));
+    Assert(!MainWindow.CanShowFirstBatch(newerOperation, operation, false, operation.Token));
+    operation.Cancel();
+    Assert(!MainWindow.CanShowFirstBatch(operation, operation, false, operation.Token));
 }
 
 static void TestGrouping()
@@ -652,7 +664,11 @@ static void TestUiQueryCompletion()
                 if (searchEnabled && !status.Contains("Querying", StringComparison.Ordinal))
                 {
                     var eventIds = eventsGrid.Items.Cast<ProblemGroup>().Select(group => group.EventId).ToArray();
-                    Assert(eventIds.SequenceEqual(eventIds.Order()));
+                    Assert(eventIds.SequenceEqual(eventIds.Order()) && status.StartsWith("Scanned", StringComparison.Ordinal));
+                    window.ApplyLanguage("zh-TW", persist: false);
+                    var localizedStatus = ((TextBlock)window.FindName("StatusText")).Text;
+                    Assert(localizedStatus.StartsWith("掃描", StringComparison.Ordinal) &&
+                           !localizedStatus.Contains("背景查詢中", StringComparison.Ordinal));
                     timer.Stop();
                     window.Close();
                     app.Shutdown();
