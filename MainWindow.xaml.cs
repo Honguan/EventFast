@@ -56,7 +56,7 @@ public partial class MainWindow : Window, IDisposable
     private async void Quick_Click(object sender, RoutedEventArgs e) =>
         await RunQueryAsync(EventQuery.QuickQueries[(string)((Button)sender).Tag]);
 
-    private async Task RunQueryAsync(QuickQuery? quick)
+    private async Task RunQueryAsync(QuickQuery? quick, bool refresh = false)
     {
         var selectedChannels = new[]
         {
@@ -115,8 +115,8 @@ public partial class MainWindow : Window, IDisposable
                     var key = $"{channel}\n{xpath}";
                     var rawRows = _cache.GetOrAdd(key,
                         () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch,
-                            filePath: _eventFile is not null, failIfTruncated: true));
-                    var rows = criteria.Keyword is null ? rawRows : _cache.GetOrAdd($"{key}\nmessages", () => AddMessages(rawRows, token));
+                            filePath: _eventFile is not null, failIfTruncated: true), refresh);
+                    var rows = criteria.Keyword is null ? rawRows : _cache.GetOrAdd($"{key}\nmessages", () => AddMessages(rawRows, token), refresh);
                     return (Rows: rows, Error: (string?)null, RequiresAdmin: false);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
@@ -303,7 +303,7 @@ public partial class MainWindow : Window, IDisposable
         else if (e.Key == Key.F5)
         {
             e.Handled = true;
-            await RunQueryAsync(null);
+            await RunQueryAsync(null, refresh: true);
         }
         else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.E && ExportButton.IsEnabled)
         {

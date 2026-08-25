@@ -7,11 +7,11 @@ internal sealed class EventCache
     private readonly object _gate = new();
     private long _size;
 
-    internal IReadOnlyList<EventRow> GetOrAdd(string key, Func<IReadOnlyList<EventRow>> factory)
+    internal IReadOnlyList<EventRow> GetOrAdd(string key, Func<IReadOnlyList<EventRow>> factory, bool bypassCache = false)
     {
         lock (_gate)
         {
-            if (_entries.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.Created < TimeSpan.FromMinutes(2))
+            if (!bypassCache && _entries.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.Created < TimeSpan.FromMinutes(2))
                 return cached.Rows;
         }
 
@@ -47,7 +47,8 @@ internal sealed class EventCache
         }
         cache.GetOrAdd("x", Factory);
         cache.GetOrAdd("x", Factory);
-        if (calls != 1)
+        cache.GetOrAdd("x", Factory, bypassCache: true);
+        if (calls != 2)
             throw new InvalidOperationException("Event cache self-test failed.");
     }
 
