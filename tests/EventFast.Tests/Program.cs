@@ -254,7 +254,26 @@ static void TestStartupArguments()
     Assert(criteria.Keyword == "retry" && criteria.EventId == 51 && criteria.Providers!.SequenceEqual(["disk"]) &&
            EventQuery.BuildXPath(criteria).Contains("Provider[@Name='disk']") &&
            EventQuery.Matches(Row(51, "disk", "retry"), criteria) && !EventQuery.Matches(Row(51, "storport", "retry disk"), criteria));
+    var state = new StartupOptions(Query: "重試 路徑 153", Provider: "Application Error",
+        From: new DateTime(2026, 8, 1), To: new DateTime(2026, 8, 24), MaximumLevel: 2,
+        Channels: ["System"], Sort: "provider", Quick: "disk");
+    var restored = StartupOptions.Parse(state.ToArguments());
+    Assert(restored.Query == state.Query && restored.Provider == state.Provider && restored.From == state.From && restored.To == state.To &&
+           restored.MaximumLevel == 2 && restored.Channels!.SequenceEqual(["System"]) && restored.Sort == "provider" && restored.Quick == "disk" &&
+           EventQuery.Parse(restored.Query!, 2, TimeSpan.Zero, restored.Provider).EventId == 153);
+    var eventFile = Path.Combine(Path.GetTempPath(), $"事件 記錄-{Guid.NewGuid():N}.evtx");
+    try
+    {
+        File.WriteAllBytes(eventFile, []);
+        var fileState = StartupOptions.Parse(new StartupOptions(EventFile: eventFile, AllTime: true, Query: "錯誤 路徑").ToArguments());
+        Assert(fileState.EventFile == Path.GetFullPath(eventFile) && fileState.AllTime && fileState.Query == "錯誤 路徑");
+    }
+    finally { File.Delete(eventFile); }
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--today", "--hours", "1"]));
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--from", "2026-08-01"]));
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--level", "4"]));
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--channel", "Security"]));
+    AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--quick", "missing"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--event-id", "65536"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--query", "--today"]));
     AssertThrows<ArgumentException>(() => StartupOptions.Parse(["--unknown"]));
@@ -487,6 +506,9 @@ static void TestUiQueryCompletion()
             Assert(detailsBox.Padding == new Thickness(12) && detailsBox.FontSize == 14 &&
                    TextBlock.GetLineHeight(detailsBox) == 22 && detailsBox.FontFamily.Source == "Microsoft JhengHei UI");
             Assert(((ComboBoxItem)((ComboBox)window.FindName("TimeBox")).SelectedItem).Tag.ToString() == "24");
+            var restartState = StartupOptions.Parse(window.CurrentStartupOptions().ToArguments());
+            Assert(restartState.Hours == 24 && restartState.MaximumLevel == 3 && restartState.Sort == "eventId" &&
+                   restartState.Channels!.Order().SequenceEqual(new[] { "Application", "System" }));
             var stopwatch = Stopwatch.StartNew();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
             timer.Tick += (_, _) =>

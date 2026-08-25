@@ -18,6 +18,7 @@ public partial class MainWindow : Window, IDisposable
     private IReadOnlyList<EventRow> _allRows = [];
     private string? _eventFile;
     private readonly string? _providerFilter;
+    private string? _quickQuery;
     private string _selectedXml = "";
 
     internal MainWindow(StartupOptions? options = null)
@@ -25,10 +26,19 @@ public partial class MainWindow : Window, IDisposable
         InitializeComponent();
         FromDate.SelectedDate = DateTime.Today.AddDays(-1);
         ToDate.SelectedDate = DateTime.Today;
-        options ??= new(null, false, null, null, null, null);
+        options ??= new();
         _eventFile = options.EventFile;
         _providerFilter = options.Provider;
-        if (options.Today)
+        _quickQuery = options.Quick;
+        if (options.From is { } from && options.To is { } to)
+        {
+            FromDate.SelectedDate = from;
+            ToDate.SelectedDate = to;
+            TimeBox.SelectedItem = TimeBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == "custom");
+        }
+        else if (options.AllTime)
+            TimeBox.SelectedItem = TimeBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == "all");
+        else if (options.Today)
             TimeBox.SelectedIndex = 4;
         else if (options.Hours is { } hours)
         {
@@ -41,22 +51,38 @@ public partial class MainWindow : Window, IDisposable
             }
             TimeBox.SelectedItem = item;
         }
+        if (options.MaximumLevel is { } maximumLevel)
+            LevelBox.SelectedItem = LevelBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == maximumLevel.ToString(CultureInfo.InvariantCulture));
+        if (options.Channels is { Count: > 0 } channels)
+        {
+            SystemBox.IsChecked = channels.Contains("System", StringComparer.OrdinalIgnoreCase);
+            ApplicationBox.IsChecked = channels.Contains("Application", StringComparer.OrdinalIgnoreCase);
+        }
+        if (options.Sort is { } sort)
+            SortBox.SelectedItem = SortBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == sort);
         SearchBox.Text = string.Join(' ', new[] { options.Query, options.EventId?.ToString(CultureInfo.InvariantCulture) }.OfType<string>());
         if (_eventFile is not null)
         {
             Title = $"EventFast — {Path.GetFileName(_eventFile)}";
             SystemBox.IsEnabled = ApplicationBox.IsEnabled = false;
-            if (!options.Today && options.Hours is null)
+            if (!options.HasTimeRange)
                 TimeBox.SelectedIndex = TimeBox.Items.Count - 1;
         }
         if (options.AutoRun)
-            Loaded += (_, _) => Dispatcher.BeginInvoke(() => _ = RunQueryAsync(null));
+            Loaded += (_, _) => Dispatcher.BeginInvoke(() => _ = RunQueryAsync(_quickQuery is null ? null : EventQuery.QuickQueries[_quickQuery]));
     }
 
-    private async void Search_Click(object sender, RoutedEventArgs e) => await RunQueryAsync(null);
+    private async void Search_Click(object sender, RoutedEventArgs e)
+    {
+        _quickQuery = null;
+        await RunQueryAsync(null);
+    }
 
-    private async void Quick_Click(object sender, RoutedEventArgs e) =>
-        await RunQueryAsync(EventQuery.QuickQueries[(string)((Button)sender).Tag]);
+    private async void Quick_Click(object sender, RoutedEventArgs e)
+    {
+        _quickQuery = (string)((Button)sender).Tag;
+        await RunQueryAsync(EventQuery.QuickQueries[_quickQuery]);
+    }
 
     private async Task RunQueryAsync(QuickQuery? quick, bool refresh = false)
     {
@@ -177,6 +203,7 @@ public partial class MainWindow : Window, IDisposable
         }
 
         _eventFile = Path.GetFullPath(files[0]);
+        _quickQuery = null;
         Title = $"EventFast — {Path.GetFileName(_eventFile)}";
         SystemBox.IsEnabled = ApplicationBox.IsEnabled = false;
         TimeBox.SelectedIndex = TimeBox.Items.Count - 1;
@@ -187,13 +214,37 @@ public partial class MainWindow : Window, IDisposable
     {
         try
         {
-            Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas" });
+            var startInfo = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas" };
+            foreach (var argument in CurrentStartupOptions().ToArguments())
+                startInfo.ArgumentList.Add(argument);
+            Process.Start(startInfo);
             Close();
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
             StatusText.Text = "已取消以系統管理員身分重新啟動。";
         }
+    }
+
+    internal StartupOptions CurrentStartupOptions()
+    {
+        var time = ((ComboBoxItem)TimeBox.SelectedItem).Tag.ToString()!;
+        var hours = int.TryParse(time, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedHours) ? parsedHours : (int?)null;
+        return new(
+            EventFile: _eventFile,
+            Today: time == "today",
+            Query: string.IsNullOrWhiteSpace(SearchBox.Text) ? null : SearchBox.Text,
+            Provider: _providerFilter,
+            Hours: hours,
+            AllTime: time == "all",
+            From: time == "custom" ? FromDate.SelectedDate : null,
+            To: time == "custom" ? ToDate.SelectedDate : null,
+            MaximumLevel: int.Parse(((ComboBoxItem)LevelBox.SelectedItem).Tag.ToString()!, CultureInfo.InvariantCulture),
+            Channels: _eventFile is null
+                ? new[] { SystemBox.IsChecked == true ? "System" : null, ApplicationBox.IsChecked == true ? "Application" : null }.OfType<string>().ToArray()
+                : null,
+            Sort: ((ComboBoxItem)SortBox.SelectedItem).Tag.ToString(),
+            Quick: _quickQuery);
     }
 
     private async void Export_Click(object sender, RoutedEventArgs e)
@@ -304,7 +355,7 @@ public partial class MainWindow : Window, IDisposable
         else if (e.Key == Key.F5)
         {
             e.Handled = true;
-            await RunQueryAsync(null, refresh: true);
+            await RunQueryAsync(_quickQuery is null ? null : EventQuery.QuickQueries[_quickQuery], refresh: true);
         }
         else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.E && ExportButton.IsEnabled)
         {
