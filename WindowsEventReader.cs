@@ -37,7 +37,7 @@ internal static class WindowsEventReader
 
     internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken,
         int maximumRows = 1_000_000, Action<IReadOnlyList<EventRow>>? firstBatch = null, bool filePath = false,
-        bool failIfTruncated = false)
+        bool failIfTruncated = false, bool includeMessage = false)
     {
         using var query = EvtQuery(IntPtr.Zero, channel, xpath, (filePath ? EvtQueryFilePath : EvtQueryChannelPath) | EvtQueryReverseDirection);
         if (query.IsInvalid)
@@ -45,6 +45,7 @@ internal static class WindowsEventReader
 
         using var renderer = new SystemRenderer();
         using var userRenderer = new UserRenderer();
+        using var messageFormatter = includeMessage ? new MessageFormatter() : null;
         var rows = new List<EventRow>();
         var handles = new IntPtr[BatchSize];
         var discardedRows = false;
@@ -69,12 +70,14 @@ internal static class WindowsEventReader
                 var batch = new EventRow[count];
                 for (var index = 0; index < count; index++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var handle = new EventHandle(handles[index]);
                     ownedHandles[index] = handle;
                     handles[index] = IntPtr.Zero;
                     var row = renderer.Render(handle, filePath ? channel : null);
                     var details = userRenderer.TryRender(handle);
-                    batch[index] = details is null ? AddDetails(row, RenderXml(handle)) : row with { Details = details };
+                    row = details is null ? AddDetails(row, RenderXml(handle)) : row with { Details = details };
+                    batch[index] = messageFormatter is null ? row : AddMessage(row, messageFormatter.Format(handle, row));
                 }
 
                 if (firstBatch is not null)
@@ -167,6 +170,11 @@ internal static class WindowsEventReader
                 return row.Details;
 
             using var handle = new EventHandle(events[0]);
+            return Format(handle, row);
+        }
+
+        internal string Format(EventHandle handle, EventRow row)
+        {
             var key = (row.Provider, row.LogFilePath);
             if (!_metadata.TryGetValue(key, out var metadata))
             {
@@ -234,6 +242,11 @@ internal static class WindowsEventReader
                 .Select(element => element.Value).Where(value => !string.IsNullOrWhiteSpace(value)));
         return row with { Details = details };
     }
+
+    private static EventRow AddMessage(EventRow row, string message) =>
+        string.IsNullOrWhiteSpace(message) || row.Details.Contains(message, StringComparison.Ordinal)
+            ? row
+            : row with { Details = string.IsNullOrWhiteSpace(row.Details) ? message : $"{row.Details}{Environment.NewLine}{message}" };
 
     private sealed class SystemRenderer : IDisposable
     {
@@ -522,7 +535,7 @@ internal static class WindowsEventReader
         };
     }
 
-    private sealed class EventHandle : SafeHandleZeroOrMinusOneIsInvalid
+    internal sealed class EventHandle : SafeHandleZeroOrMinusOneIsInvalid
     {
         internal EventHandle() : base(true) { }
         internal EventHandle(IntPtr handle) : base(true) => SetHandle(handle);

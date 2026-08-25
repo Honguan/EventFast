@@ -28,7 +28,7 @@ foreach (var benchmark in cases)
 
 var keywordCriteria = EventQuery.Parse("disk", 3, TimeSpan.FromHours(24));
 var keywordWatch = Stopwatch.StartNew();
-var keywordRows = MainWindow.AddMessages(WindowsEventReader.Read("System", EventQuery.BuildXPath(keywordCriteria), CancellationToken.None))
+var keywordRows = WindowsEventReader.Read("System", EventQuery.BuildXPath(keywordCriteria), CancellationToken.None, includeMessage: true)
     .Where(row => EventQuery.Matches(row, keywordCriteria)).ToArray();
 keywordWatch.Stop();
 Console.WriteLine($"System 24h keyword disk\t{keywordRows.Length}\t-\t{keywordWatch.Elapsed.TotalMilliseconds:F1}\t-\t-\t" +
