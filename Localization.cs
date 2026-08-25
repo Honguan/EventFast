@@ -25,16 +25,16 @@ public sealed class Localization : INotifyPropertyChanged
         ["QuickDisk"] = "Disk / SSD / NVMe", ["QuickNtfs"] = "NTFS / file system", ["QuickUsb"] = "USB / USB-C / UCSI",
         ["QuickDevice"] = "Device / Kernel-PnP", ["QuickDriver"] = "Drivers", ["QuickWhea"] = "Hardware / WHEA",
         ["QuickNetwork"] = "Network", ["QuickUpdate"] = "Windows Update", ["QuickPower"] = "Power / unexpected shutdown",
-        ["SearchPossibleCauses"] = "Search possible causes", ["ColumnSeverity"] = "Severity", ["ColumnProblem"] = "Problem",
+        ["SearchPossibleCauses"] = "Search possible causes", ["EventId"] = "Event ID", ["ColumnSeverity"] = "Severity", ["ColumnProblem"] = "Problem",
         ["ColumnCount"] = "Count", ["ColumnSource"] = "Source", ["ColumnLastSeen"] = "Last seen",
-        ["ProblemDetails"] = "Problem details", ["GroupedEvents"] = "Grouped events", ["ColumnTime"] = "Time",
+        ["ProblemDetails"] = "Problem details", ["GroupedEvents"] = "Group Events", ["ColumnTime"] = "Time",
         ["EventContent"] = "Event content", ["CopyProblem"] = "Copy problem", ["CopyFull"] = "Copy full content", ["CopyXml"] = "Copy XML",
         ["ParsedXml"] = "Parsed XML", ["ParseXmlFailed"] = "Could not parse XML: {0}",
         ["LevelCritical"] = "Critical", ["LevelError"] = "Error", ["LevelWarning"] = "Warning",
         ["LevelInformation"] = "Information", ["LevelVerbose"] = "Verbose", ["LevelUnknown"] = "Unknown",
         ["ProblemDiskRetry"] = "Disk I/O retry", ["ProblemDiskError"] = "Disk I/O error",
         ["ProblemUnexpectedShutdown"] = "Unexpected shutdown / power failure", ["ProblemAppCrash"] = "Application crash",
-        ["ProblemWhea"] = "WHEA hardware error event",
+        ["ProblemWhea"] = "WHEA hardware error event", ["ProblemFallback"] = "{0} + Event ID {1}",
         ["SelectChannel"] = "Select at least one channel.", ["Querying"] = "Querying…", ["QueryingNamed"] = "Querying “{0}”…",
         ["InvalidCustomDates"] = "Select a valid custom date range.", ["FirstBatch"] = "Showing first {0:N0} events · Querying in background…",
         ["QuerySummary"] = "Scanned {0:N0} · Matched {1:N0} · Critical {2:N0} · Errors {3:N0} · Warnings {4:N0} · Grouped into {5:N0}",
@@ -43,7 +43,9 @@ public sealed class Localization : INotifyPropertyChanged
         ["SelectProblem"] = "Select a problem first.", ["ExcelFilter"] = "Excel workbook (*.xlsx)|*.xlsx",
         ["Exporting"] = "Exporting Excel…", ["Exported"] = "Exported {0}", ["ExportCancelled"] = "Export cancelled.",
         ["DiskFull"] = "Not enough disk space. Excel export failed.", ["ExportFailed"] = "Export failed: {0}",
-        ["GroupedEventsCount"] = "Grouped events ({0:N0})", ["BrowserFailed"] = "Could not open the browser: {0}",
+        ["ExcelProblemSheet"] = "Problem summary", ["ExcelEventsSheet"] = "Complete events",
+        ["ExcelMessage"] = "Message", ["ExcelXml"] = "XML", ["ExcelRowLimit"] = "The event count exceeds the Excel worksheet limit.",
+        ["GroupedEventsCount"] = "Group Events ({0:N0})", ["BrowserFailed"] = "Could not open the browser: {0}",
         ["CauseSearchSuffix"] = "Windows possible causes fix", ["LoadingDetails"] = "Loading the complete event message…",
         ["LoadDetailsFailed"] = "Could not load the complete event: {0}", ["SummaryHeading"] = "[Problem summary]",
         ["Occurrences"] = "Occurrences", ["FirstSeen"] = "First seen", ["LastSeen"] = "Last seen",
@@ -83,7 +85,7 @@ public sealed class Localization : INotifyPropertyChanged
         ["QuickDisk"] = "磁碟 / SSD / NVMe", ["QuickNtfs"] = "NTFS / 檔案系統", ["QuickUsb"] = "USB / USB-C / UCSI",
         ["QuickDevice"] = "裝置 / Kernel-PnP", ["QuickDriver"] = "驅動程式", ["QuickWhea"] = "硬體 / WHEA",
         ["QuickNetwork"] = "網路", ["QuickUpdate"] = "Windows Update", ["QuickPower"] = "電源 / 異常關機",
-        ["SearchPossibleCauses"] = "使用搜尋引擎查詢可能原因", ["ColumnSeverity"] = "等級", ["ColumnProblem"] = "問題",
+        ["SearchPossibleCauses"] = "使用搜尋引擎查詢可能原因", ["EventId"] = "Event ID", ["ColumnSeverity"] = "等級", ["ColumnProblem"] = "問題",
         ["ColumnCount"] = "次數", ["ColumnSource"] = "來源", ["ColumnLastSeen"] = "最後發生",
         ["ProblemDetails"] = "問題詳細資料", ["GroupedEvents"] = "群組事件", ["ColumnTime"] = "時間",
         ["EventContent"] = "事件內容", ["CopyProblem"] = "複製問題", ["CopyFull"] = "複製完整內容", ["CopyXml"] = "複製 XML",
@@ -92,7 +94,7 @@ public sealed class Localization : INotifyPropertyChanged
         ["LevelInformation"] = "資訊", ["LevelVerbose"] = "詳細", ["LevelUnknown"] = "未知",
         ["ProblemDiskRetry"] = "磁碟 I/O 重試", ["ProblemDiskError"] = "磁碟 I/O 發生錯誤",
         ["ProblemUnexpectedShutdown"] = "非正常關機 / 電源異常", ["ProblemAppCrash"] = "應用程式崩潰",
-        ["ProblemWhea"] = "WHEA 硬體錯誤事件",
+        ["ProblemWhea"] = "WHEA 硬體錯誤事件", ["ProblemFallback"] = "{0} + Event ID {1}",
         ["SelectChannel"] = "請至少選擇一個 Channel。", ["Querying"] = "查詢中…", ["QueryingNamed"] = "查詢「{0}」…",
         ["InvalidCustomDates"] = "請選擇有效的自訂起訖日期。", ["FirstBatch"] = "已顯示第一批 {0:N0} 筆 · 背景查詢中…",
         ["QuerySummary"] = "掃描 {0:N0} 筆 · 符合 {1:N0} 筆 · 嚴重 {2:N0} · 錯誤 {3:N0} · 警告 {4:N0} · 合併 {5:N0} 類",
@@ -101,6 +103,8 @@ public sealed class Localization : INotifyPropertyChanged
         ["SelectProblem"] = "請先選取一個問題。", ["ExcelFilter"] = "Excel 活頁簿 (*.xlsx)|*.xlsx",
         ["Exporting"] = "正在匯出 Excel…", ["Exported"] = "已匯出 {0}", ["ExportCancelled"] = "匯出已取消。",
         ["DiskFull"] = "磁碟空間不足，Excel 匯出失敗。", ["ExportFailed"] = "匯出失敗：{0}",
+        ["ExcelProblemSheet"] = "問題摘要", ["ExcelEventsSheet"] = "完整事件",
+        ["ExcelMessage"] = "訊息", ["ExcelXml"] = "XML", ["ExcelRowLimit"] = "事件數量超過單一 Excel 工作表上限。",
         ["GroupedEventsCount"] = "群組事件 ({0:N0})", ["BrowserFailed"] = "無法開啟瀏覽器：{0}",
         ["CauseSearchSuffix"] = "Windows 可能原因 修正", ["LoadingDetails"] = "正在載入完整事件訊息…",
         ["LoadDetailsFailed"] = "無法載入完整事件：{0}", ["SummaryHeading"] = "【問題摘要】",
@@ -138,13 +142,22 @@ public sealed class Localization : INotifyPropertyChanged
     internal static void SetLanguage(string language) => Instance.ChangeLanguage(language, persist: true);
     internal static void UseLanguage(string language) => Instance.ChangeLanguage(language, persist: false);
     internal static string Text(string key) => Instance[key];
-    internal static string Format(string key, params object?[] args) => string.Format(CultureInfo.CurrentCulture, Text(key), args);
+    internal static string Text(string key, string language) =>
+        (Normalize(language) == "zh-TW" ? Chinese : English).TryGetValue(key, out var value) ? value : key;
+    internal static string Format(string key, params object?[] args) => FormatForLanguage(key, Instance.CurrentLanguage, args);
+    internal static string FormatForLanguage(string key, string language, params object?[] args) =>
+        string.Format(CultureInfo.GetCultureInfo(Normalize(language)), Text(key, language), args);
     internal static bool ResourcesMatch => English.Keys.Order().SequenceEqual(Chinese.Keys.Order());
     internal static string Level(string level) => Text(level switch
     {
         "Critical" => "LevelCritical", "Error" => "LevelError", "Warning" => "LevelWarning",
         "Information" => "LevelInformation", "Verbose" => "LevelVerbose", _ => "LevelUnknown"
     });
+    internal static string Level(string level, string language) => Text(level switch
+    {
+        "Critical" => "LevelCritical", "Error" => "LevelError", "Warning" => "LevelWarning",
+        "Information" => "LevelInformation", "Verbose" => "LevelVerbose", _ => "LevelUnknown"
+    }, language);
 
     internal static string LoadLanguage(string path)
     {

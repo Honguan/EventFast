@@ -66,7 +66,7 @@
                 <ComboBoxItem Tag="latest" Content="{local:Loc Latest}" />
                 <ComboBoxItem Tag="oldest" Content="{local:Loc Oldest}" />
                 <ComboBoxItem Tag="frequent" Content="{local:Loc MostFrequent}" />
-                <ComboBoxItem Tag="eventId">Event ID</ComboBoxItem>
+                <ComboBoxItem Tag="eventId" Content="{local:Loc EventId}" />
                 <ComboBoxItem Tag="provider">Provider</ComboBoxItem>
             </ComboBox>
             <TextBlock Text="{local:Loc Language}" VerticalAlignment="Center" Margin="20,0,0,0" />
@@ -107,7 +107,7 @@
                 <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding Severity}" Width="70" />
                 <DataGridTextColumn Header="{local:Loc ColumnProblem}" Binding="{Binding Problem}" Width="2*" />
                 <DataGridTextColumn Header="{local:Loc ColumnCount}" Binding="{Binding Count}" Width="70" />
-                <DataGridTextColumn Header="Event ID" Binding="{Binding EventId}" Width="85" />
+                <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" />
                 <DataGridTextColumn Header="{local:Loc ColumnSource}" Binding="{Binding Provider}" Width="2*" />
                 <DataGridTextColumn Header="{local:Loc ColumnLastSeen}" Binding="{Binding LastSeen}" Width="160" />
             </DataGrid.Columns>
@@ -123,10 +123,10 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{local:Loc ColumnTime}" Binding="{Binding Time}" Width="160" />
                             <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding DisplayLevel}" Width="90" />
-                            <DataGridTextColumn Header="Event ID" Binding="{Binding EventId}" Width="85" />
+                            <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" />
                             <DataGridTextColumn Header="{local:Loc ColumnSource}" Binding="{Binding Provider}" Width="2*" />
-                            <DataGridTextColumn Header="Channel" Binding="{Binding Channel}" Width="2*" />
-                            <DataGridTextColumn Header="Record ID" Binding="{Binding RecordId}" Width="100" />
+                            <DataGridTextColumn Header="{local:Loc Channel}" Binding="{Binding Channel}" Width="2*" />
+                            <DataGridTextColumn Header="{local:Loc RecordId}" Binding="{Binding RecordId}" Width="100" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </TabItem>

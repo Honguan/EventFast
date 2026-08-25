@@ -76,7 +76,7 @@ internal static class EventQuery
         if (criteria.Keyword is { } keyword && keyword.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(word =>
                 !row.Provider.Contains(word, StringComparison.OrdinalIgnoreCase) &&
                 !row.Details.Contains(word, StringComparison.OrdinalIgnoreCase) &&
-                !ProblemClassifier.Classify(row).Contains(word, StringComparison.OrdinalIgnoreCase)))
+                !ProblemClassifier.SearchText(row).Contains(word, StringComparison.OrdinalIgnoreCase)))
             return false;
 
         if ((criteria.Providers?.Count ?? 0) + (criteria.EventIds?.Count ?? 0) == 0)

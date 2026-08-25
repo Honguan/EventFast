@@ -230,8 +230,13 @@ static void TestLocalization()
         Assert(AppLocalization.LoadLanguage(path) == "en");
     });
     AppLocalization.UseLanguage("zh-TW");
-    Assert(AppLocalization.Text("Search") == "搜尋" && ProblemClassifier.Classify("disk", 153) == "磁碟 I/O 重試");
+    var disk = Row(153, "disk", "retry");
+    Assert(AppLocalization.Text("Search") == "搜尋" && ProblemClassifier.Classify("disk", 153) == "磁碟 I/O 重試" &&
+           EventQuery.Matches(disk, EventQuery.Parse("Disk I/O", 3, TimeSpan.FromDays(1))) &&
+           EventQuery.Matches(disk, EventQuery.Parse("磁碟 重試", 3, TimeSpan.FromDays(1))));
     AppLocalization.UseLanguage("en");
+    Assert(EventQuery.Matches(disk, EventQuery.Parse("Disk retry", 3, TimeSpan.FromDays(1))) &&
+           EventQuery.Matches(disk, EventQuery.Parse("磁碟 I/O", 3, TimeSpan.FromDays(1))));
 }
 
 static void TestXPath()
@@ -377,8 +382,23 @@ static void TestExport()
         using var archive = ZipFile.OpenRead(path);
         using var reader = new StreamReader(archive.GetEntry("xl/worksheets/sheet2.xml")!.Open());
         var xml = reader.ReadToEnd();
-        Assert(contentCalls == 1 && xml.Contains("Message") && xml.Contains("XML") && xml.Contains("Unexpected shutdown"));
+        using var workbookReader = new StreamReader(archive.GetEntry("xl/workbook.xml")!.Open());
+        Assert(contentCalls == 1 && xml.Contains("Message") && xml.Contains("XML") && xml.Contains("Error") &&
+               xml.Contains("Unexpected shutdown") && workbookReader.ReadToEnd().Contains("Problem summary"));
     });
+    AppLocalization.UseLanguage("zh-TW");
+    WithPath(path =>
+    {
+        var row = Row(41, "Microsoft-Windows-Kernel-Power", "Unexpected shutdown");
+        var groups = ProblemGrouping.Group([row]);
+        AppLocalization.UseLanguage("en");
+        XlsxExporter.Export(path, groups, [row], language: "zh-TW");
+        using var archive = ZipFile.OpenRead(path);
+        using var workbookReader = new StreamReader(archive.GetEntry("xl/workbook.xml")!.Open());
+        using var sheetReader = new StreamReader(archive.GetEntry("xl/worksheets/sheet2.xml")!.Open());
+        Assert(workbookReader.ReadToEnd().Contains("問題摘要") && sheetReader.ReadToEnd().Contains("錯誤"));
+    });
+    Assert(AppLocalization.Instance.CurrentLanguage == "en");
 }
 
 static void TestLockedExport()
@@ -525,34 +545,41 @@ static void TestUiQueryCompletion()
         try
         {
             var app = new Application();
-            var window = new MainWindow(new(null, false, 24, null, null, null));
+            var window = new MainWindow(new(null, false, 48, null, null, null));
             var eventsGrid = (DataGrid)window.FindName("EventsGrid");
             var occurrencesGrid = (DataGrid)window.FindName("OccurrencesGrid");
             var detailsBox = (TextBox)window.FindName("DetailsBox");
             var searchButton = (Button)window.FindName("SearchButton");
-            Assert(searchButton.Content.ToString() == "Search");
-            AppLocalization.UseLanguage("zh-TW");
-            Assert(searchButton.Content.ToString() == "搜尋");
-            AppLocalization.UseLanguage("en");
-            Assert(searchButton.Content.ToString() == "Search");
+            var timeBox = (ComboBox)window.FindName("TimeBox");
             var sampleRows = new[]
             {
-                Row(153, "disk", "Retry sector 1"),
-                Row(153, "disk", "Retry sector 1")
+                Row(153, "disk", "Retry sector 1") with { Message = "Retry sector 1", Xml = "<Event />" },
+                Row(153, "disk", "Retry sector 1") with { Message = "Retry sector 1", Xml = "<Event />" }
             };
             var sampleGroup = ProblemGrouping.Group(sampleRows)[0];
             eventsGrid.ItemsSource = new[] { sampleGroup };
             eventsGrid.SelectedItem = sampleGroup;
+            ((TabControl)window.FindName("DetailsTabs")).SelectedIndex = 0;
             Assert(occurrencesGrid.Items.Count == 2);
-            Assert(((TabItem)window.FindName("OccurrencesTab")).Header.ToString()!.Contains("2"));
+            var occurrencesTab = (TabItem)window.FindName("OccurrencesTab");
+            Assert(occurrencesTab.Header.ToString() == "Group Events (2)" &&
+                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours");
+            window.ApplyLanguage("zh-TW", persist: false);
+            Assert(searchButton.Content.ToString() == "搜尋" && occurrencesTab.Header.ToString() == "群組事件 (2)" &&
+                   eventsGrid.SelectedItem is ProblemGroup &&
+                   occurrencesGrid.Items.Count == 2 && ((TabControl)window.FindName("DetailsTabs")).SelectedIndex == 0 &&
+                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時");
+            window.ApplyLanguage("en", persist: false);
+            Assert(searchButton.Content.ToString() == "Search" && occurrencesTab.Header.ToString() == "Group Events (2)" &&
+                   eventsGrid.SelectedItem is ProblemGroup && ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours");
             ((ComboBox)window.FindName("SortBox")).SelectedIndex = 4;
             window.Show();
             window.Hide();
             Assert(detailsBox.Padding == new Thickness(12) && detailsBox.FontSize == 14 &&
                    TextBlock.GetLineHeight(detailsBox) == 22 && detailsBox.FontFamily.Source == "Microsoft JhengHei UI");
-            Assert(((ComboBoxItem)((ComboBox)window.FindName("TimeBox")).SelectedItem).Tag.ToString() == "24");
+            Assert(((ComboBoxItem)timeBox.SelectedItem).Tag.ToString() == "48");
             var restartState = StartupOptions.Parse(window.CurrentStartupOptions().ToArguments());
-            Assert(restartState.Hours == 24 && restartState.MaximumLevel == 3 && restartState.Sort == "eventId" &&
+            Assert(restartState.Hours == 48 && restartState.MaximumLevel == 3 && restartState.Sort == "eventId" &&
                    restartState.Channels!.Order().SequenceEqual(new[] { "Application", "System" }));
             var stopwatch = Stopwatch.StartNew();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };

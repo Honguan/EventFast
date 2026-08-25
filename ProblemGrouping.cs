@@ -17,15 +17,29 @@ internal static class ProblemClassifier
 {
     internal static string Classify(EventRow row) => Classify(row.Provider, row.EventId);
 
-    internal static string Classify(string provider, int eventId) =>
+    internal static string Classify(string provider, int eventId)
+    {
+        var key = ClassificationKey(provider, eventId);
+        return key is null ? Localization.Format("ProblemFallback", provider, eventId) : Localization.Text(key);
+    }
+
+    internal static string SearchText(EventRow row)
+    {
+        var key = ClassificationKey(row.Provider, row.EventId);
+        return key is null
+            ? Localization.Format("ProblemFallback", row.Provider, row.EventId)
+            : $"{Localization.Text(key, "en")} {Localization.Text(key, "zh-TW")}";
+    }
+
+    private static string? ClassificationKey(string provider, int eventId) =>
         provider switch
         {
-            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 153 => Localization.Text("ProblemDiskRetry"),
-            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 51 => Localization.Text("ProblemDiskError"),
-            var p when p.EndsWith("Kernel-Power", StringComparison.OrdinalIgnoreCase) && eventId == 41 => Localization.Text("ProblemUnexpectedShutdown"),
-            var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1000 => Localization.Text("ProblemAppCrash"),
-            var p when p.Contains("WHEA-Logger", StringComparison.OrdinalIgnoreCase) => Localization.Text("ProblemWhea"),
-            _ => $"{provider} + Event ID {eventId}"
+            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 153 => "ProblemDiskRetry",
+            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 51 => "ProblemDiskError",
+            var p when p.EndsWith("Kernel-Power", StringComparison.OrdinalIgnoreCase) && eventId == 41 => "ProblemUnexpectedShutdown",
+            var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1000 => "ProblemAppCrash",
+            var p when p.Contains("WHEA-Logger", StringComparison.OrdinalIgnoreCase) => "ProblemWhea",
+            _ => null
         };
 }
 
