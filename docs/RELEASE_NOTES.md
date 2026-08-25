@@ -1,7 +1,11 @@
-# EventFast v1.0.4
+# EventFast v1.0.5
+
+New:
+
+- Active filters now have high-contrast visual states and a localized summary
 
 Fixed:
 
-- Language changes now refresh all visible content while preserving the selected problem, occurrence, and tab
-- Parsed XML now has a dedicated third tab, leaving Event Content full-width and free of raw XML
-- Copy XML is disabled while another occurrence is loading, preventing stale XML from being copied
+- Quick filters now use provider-aware Event ID rules instead of matching unrelated providers
+- Common Windows events have clearer classifications and more stable grouping
+- Delayed first-batch callbacks can no longer overwrite completed query results or status text
