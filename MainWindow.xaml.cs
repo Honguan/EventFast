@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -18,10 +19,10 @@ public partial class MainWindow : Window, IDisposable
     private CancellationTokenSource? _operationCancellation;
     private readonly EventCache _cache = new();
     private IReadOnlyList<ProblemGroup> _groups = [];
-    private IReadOnlyList<EventRow> _rows = [];
+    private EventRow[] _rows = [];
     private IReadOnlyList<EventRow> _allRows = [];
     private string? _eventFile;
-    private readonly string? _providerFilter;
+    private string? _providerFilter;
     private string? _quickQuery;
     private string _selectedXml = "";
     private EventRow? _selectedRow;
@@ -30,6 +31,7 @@ public partial class MainWindow : Window, IDisposable
     private ComboBoxItem? _customHoursItem;
     private bool _changingLanguage;
     private Func<string>? _operationStatus;
+    private string _emptyStateKey = "ReadyHint";
 
     internal MainWindow(StartupOptions? options = null)
     {
@@ -87,20 +89,22 @@ public partial class MainWindow : Window, IDisposable
 
     private async void Search_Click(object sender, RoutedEventArgs e)
     {
-        _quickQuery = null;
-        UpdateFilterVisuals();
-        await RunQueryAsync(null);
+        await RunQueryAsync(_quickQuery is null ? null : EventQuery.QuickQueries[_quickQuery]);
     }
 
     private async void Quick_Click(object sender, RoutedEventArgs e)
     {
+        if (_operationCancellation is not null)
+            return;
         _quickQuery = (string)((Button)sender).Tag;
         UpdateFilterVisuals();
         await RunQueryAsync(EventQuery.QuickQueries[_quickQuery]);
     }
 
-    private async Task RunQueryAsync(QuickQuery? quick, bool refresh = false)
+    internal async Task RunQueryAsync(QuickQuery? quick, bool refresh = false)
     {
+        if (_operationCancellation is not null)
+            return;
         var selectedChannels = new[]
         {
             SystemBox.IsChecked == true ? "System" : null,
@@ -118,9 +122,12 @@ public partial class MainWindow : Window, IDisposable
         _operationCancellation?.Dispose();
         var operation = _operationCancellation = new CancellationTokenSource();
         var token = operation.Token;
+        StatusText.ToolTip = null;
         SearchButton.IsEnabled = false;
         ExportButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
+        UpdateBusyState();
+        SetEmptyState("Querying");
         SetOperationStatus(() => quick is null
             ? Localization.Text("Querying")
             : Localization.Format("QueryingNamed", Localization.Text(quick.Name)));
@@ -153,6 +160,7 @@ public partial class MainWindow : Window, IDisposable
                     SetOperationStatus(() => Localization.Format("FirstBatch", previewRows.Count));
                 });
             }
+            var eventFile = _eventFile;
             var tasks = channels.Select(channel => Task.Run(() =>
             {
                 try
@@ -161,7 +169,7 @@ public partial class MainWindow : Window, IDisposable
                     var cacheKey = criteria.Keyword is null ? key : $"{key}\nmessages";
                     var rows = _cache.GetOrAdd(cacheKey,
                         () => WindowsEventReader.Read(channel, xpath, token, firstBatch: ShowFirstBatch,
-                            filePath: _eventFile is not null, failIfTruncated: true, includeMessage: criteria.Keyword is not null), refresh);
+                            filePath: eventFile is not null, failIfTruncated: true, includeMessage: criteria.Keyword is not null), refresh);
                     return (Rows: rows, Error: (string?)null, RequiresAdmin: false);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
@@ -170,10 +178,16 @@ public partial class MainWindow : Window, IDisposable
                 }
             }, token));
             var results = await Task.WhenAll(tasks);
-            var allRows = results.SelectMany(result => result.Rows).ToArray();
-            var rows = allRows.Where(row => EventQuery.Matches(row, criteria)).ToArray();
-            token.ThrowIfCancellationRequested();
-            var groups = ProblemGrouping.Group(rows);
+            var (allRows, rows, groups) = await Task.Run(() =>
+            {
+                var scanned = results.SelectMany(result => result.Rows).ToArray();
+                var matching = scanned.Where(row =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    return EventQuery.Matches(row, criteria);
+                }).ToArray();
+                return (scanned, matching, ProblemGrouping.Group(matching, token));
+            }, token);
             token.ThrowIfCancellationRequested();
             queryCompleted = true;
             _rows = rows;
@@ -183,6 +197,7 @@ public partial class MainWindow : Window, IDisposable
             ExportButton.IsEnabled = groups.Count > 0;
             var errors = results.Count(result => result.Error is not null);
             var firstError = results.Select(result => result.Error).FirstOrDefault(error => error is not null);
+            SetEmptyState(errors > 0 ? "QueryFailedHint" : "NoResultsHint");
             AdminButton.Visibility = results.Any(result => result.RequiresAdmin) ? Visibility.Visible : Visibility.Collapsed;
             StatusText.ToolTip = string.Join(Environment.NewLine, results.Select(result => result.Error).OfType<string>());
             SetOperationStatus(() => Localization.Format("QuerySummary", allRows.Length, rows.Length,
@@ -193,12 +208,18 @@ public partial class MainWindow : Window, IDisposable
         catch (OperationCanceledException)
         {
             if (ReferenceEquals(_operationCancellation, operation))
+            {
+                SetEmptyState("QueryCancelled");
                 SetOperationStatus(() => Localization.Text("QueryCancelled"));
+            }
         }
         catch (Exception exception)
         {
             if (ReferenceEquals(_operationCancellation, operation))
+            {
+                SetEmptyState("QueryFailedHint");
                 SetOperationStatus(() => exception.Message);
+            }
         }
         finally
         {
@@ -209,6 +230,9 @@ public partial class MainWindow : Window, IDisposable
                 SearchButton.IsEnabled = true;
                 CancelButton.IsEnabled = false;
                 ExportButton.IsEnabled = _groups.Count > 0;
+                if (!queryCompleted)
+                    ApplySort();
+                UpdateBusyState();
             }
         }
     }
@@ -219,20 +243,71 @@ public partial class MainWindow : Window, IDisposable
 
     private async void Window_Drop(object sender, DragEventArgs e)
     {
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } files ||
+        if (_operationCancellation is not null)
+            return;
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetData(DataFormats.FileDrop) is not string[] { Length: 1 } files ||
             !Path.GetExtension(files[0]).Equals(".evtx", StringComparison.OrdinalIgnoreCase))
         {
-            StatusText.Text = Localization.Text("DropEvtx");
+            SetOperationStatus(() => Localization.Text("DropEvtx"));
             return;
         }
 
-        _eventFile = Path.GetFullPath(files[0]);
+        await SetEventSourceAsync(files[0]);
+    }
+
+    private async void OpenEvtx_Click(object sender, RoutedEventArgs e)
+    {
+        if (_operationCancellation is not null)
+            return;
+        var dialog = new OpenFileDialog { Filter = Localization.Text("EvtxFilter"), CheckFileExists = true };
+        if (dialog.ShowDialog(this) == true)
+            await SetEventSourceAsync(dialog.FileName);
+    }
+
+    private async void LocalSource_Click(object sender, RoutedEventArgs e) => await SetEventSourceAsync(null);
+
+    internal async Task SetEventSourceAsync(string? file)
+    {
+        if (_operationCancellation is not null)
+            return;
+        if (file is not null && (!Path.GetExtension(file).Equals(".evtx", StringComparison.OrdinalIgnoreCase) || !File.Exists(file)))
+        {
+            SetOperationStatus(() => Localization.Format("EvtxNotFound", file));
+            return;
+        }
+        _eventFile = file is null ? null : Path.GetFullPath(file);
         _quickQuery = null;
-        Title = $"EventFast — {Path.GetFileName(_eventFile)}";
-        SystemBox.IsEnabled = ApplicationBox.IsEnabled = false;
-        TimeBox.SelectedIndex = TimeBox.Items.Count - 1;
+        _groups = [];
+        _rows = [];
+        _allRows = [];
+        ApplySort();
+        ExportButton.IsEnabled = false;
+        TimeBox.SelectedItem = TimeBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == (file is null ? "24" : "all"));
         UpdateFilterVisuals();
-        await RunQueryAsync(null);
+        await RunQueryAsync(null, refresh: true);
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) =>
+        await RunQueryAsync(_quickQuery is null ? null : EventQuery.QuickQueries[_quickQuery], refresh: true);
+
+    private void ResetFilters_Click(object sender, RoutedEventArgs e) => ResetFilters();
+
+    internal void ResetFilters()
+    {
+        if (_operationCancellation is not null)
+            return;
+        _quickQuery = null;
+        _providerFilter = null;
+        SearchBox.Clear();
+        TimeBox.SelectedItem = TimeBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == (_eventFile is null ? "24" : "all"));
+        LevelBox.SelectedIndex = 2;
+        SystemBox.IsChecked = ApplicationBox.IsChecked = true;
+        SortBox.SelectedIndex = 0;
+        FromDate.SelectedDate = DateTime.Today.AddDays(-1);
+        ToDate.SelectedDate = DateTime.Today;
+        UpdateFilterVisuals();
+        SetOperationStatus(() => Localization.Text("FiltersReset"));
+        SearchBox.Focus();
     }
 
     private void Admin_Click(object sender, RoutedEventArgs e)
@@ -274,6 +349,8 @@ public partial class MainWindow : Window, IDisposable
 
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
+        if (_operationCancellation is not null)
+            return;
         if (((ComboBoxItem)ExportScopeBox.SelectedItem).Tag.ToString() == "selected" && EventsGrid.SelectedItem is not ProblemGroup)
         {
             StatusText.Text = Localization.Text("SelectProblem");
@@ -295,6 +372,7 @@ public partial class MainWindow : Window, IDisposable
         _operationCancellation?.Dispose();
         var operation = _operationCancellation = new CancellationTokenSource();
         CancelButton.IsEnabled = true;
+        UpdateBusyState();
         SetOperationStatus(() => Localization.Text("Exporting"));
         try
         {
@@ -302,51 +380,55 @@ public partial class MainWindow : Window, IDisposable
             IReadOnlyList<EventRow> rows = scope switch
             {
                 "all" => _allRows,
-                "selected" when EventsGrid.SelectedItem is ProblemGroup group => group.Events,
+                "selected" when EventsGrid.SelectedItems.Count > 0 => SelectedExportRows(),
                 "selected" => throw new InvalidOperationException(Localization.Text("SelectProblem")),
                 _ => _rows
             };
-            var groups = scope == "current" ? _groups : ProblemGrouping.Group(rows);
+            var currentGroups = _groups;
             var includeXml = IncludeXmlBox.IsChecked == true;
             var exportLanguage = Localization.Instance.CurrentLanguage;
             await Task.Run(() =>
             {
+                var groups = scope == "current" ? currentGroups : ProblemGrouping.Group(rows, operation.Token);
                 using var formatter = WindowsEventReader.CreateMessageFormatter();
                 XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, row => formatter.ReadContent(row, includeXml),
                     exportLanguage, operation.Token);
             }, operation.Token);
-            StatusText.Text = Localization.Format("Exported", Path.GetFileName(dialog.FileName));
+            SetOperationStatus(() => Localization.Format("Exported", Path.GetFileName(dialog.FileName)));
         }
         catch (OperationCanceledException)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = Localization.Text("ExportCancelled");
+                SetOperationStatus(() => Localization.Text("ExportCancelled"));
         }
         catch (IOException exception) when ((exception.HResult & 0xffff) == 112)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = Localization.Text("DiskFull");
+                SetOperationStatus(() => Localization.Text("DiskFull"));
         }
         catch (Exception exception)
         {
             if (ReferenceEquals(_operationCancellation, operation))
-                StatusText.Text = Localization.Format("ExportFailed", exception.Message);
+                SetOperationStatus(() => Localization.Format("ExportFailed", exception.Message));
         }
         finally
         {
             if (ReferenceEquals(_operationCancellation, operation))
             {
                 _operationCancellation = null;
-                _operationStatus = null;
                 operation.Dispose();
                 SearchButton.IsEnabled = true;
                 CancelButton.IsEnabled = false;
                 ExportButton.IsEnabled = _groups.Count > 0;
+                UpdateBusyState();
             }
         }
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _operationCancellation?.Cancel();
+
+    internal IReadOnlyList<EventRow> SelectedExportRows() =>
+        EventsGrid.SelectedItems.OfType<ProblemGroup>().SelectMany(group => group.Events).ToArray();
 
     private void Sort_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -362,6 +444,7 @@ public partial class MainWindow : Window, IDisposable
         if (EventsGrid is null || SortBox.SelectedItem is not ComboBoxItem item)
             return;
 
+        var selected = EventsGrid.SelectedItems.OfType<ProblemGroup>().ToArray();
         EventsGrid.ItemsSource = (item.Tag.ToString() switch
         {
             "latest" => _groups.OrderByDescending(group => group.LastSeen),
@@ -371,6 +454,8 @@ public partial class MainWindow : Window, IDisposable
             "provider" => _groups.OrderBy(group => group.Provider),
             _ => _groups.AsEnumerable()
         }).ToArray();
+        foreach (var group in selected.Where(_groups.Contains))
+            EventsGrid.SelectedItems.Add(group);
     }
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -385,6 +470,11 @@ public partial class MainWindow : Window, IDisposable
         {
             e.Handled = true;
             await RunQueryAsync(_quickQuery is null ? null : EventQuery.QuickQueries[_quickQuery], refresh: true);
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O)
+        {
+            e.Handled = true;
+            OpenEvtx_Click(OpenEvtxButton, new RoutedEventArgs());
         }
         else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.E && ExportButton.IsEnabled)
         {
@@ -404,7 +494,7 @@ public partial class MainWindow : Window, IDisposable
         else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.C &&
                  EventsGrid.IsKeyboardFocusWithin && EventsGrid.SelectedItems.Count > 0)
         {
-            Clipboard.SetText(string.Join($"{Environment.NewLine}{Environment.NewLine}",
+            CopyText(string.Join($"{Environment.NewLine}{Environment.NewLine}",
                 EventsGrid.SelectedItems.OfType<ProblemGroup>().Select(FormatSummary)));
             e.Handled = true;
         }
@@ -413,7 +503,7 @@ public partial class MainWindow : Window, IDisposable
             e.Handled = true;
             await LoadSelectedDetailsAsync(occurrence);
         }
-        else if (e.Key == Key.Enter && EventsGrid.SelectedItem is ProblemGroup)
+        else if (e.Key == Key.Enter && EventsGrid.IsKeyboardFocusWithin && EventsGrid.SelectedItem is ProblemGroup)
         {
             e.Handled = true;
             await LoadSelectedDetailsAsync();
@@ -449,18 +539,32 @@ public partial class MainWindow : Window, IDisposable
         if (CustomTimePanel is not null && TimeBox.SelectedItem is ComboBoxItem item)
             CustomTimePanel.Visibility = item.Tag.ToString() == "custom" ? Visibility.Visible : Visibility.Collapsed;
         UpdateFilterVisuals();
+        MarkFiltersChanged();
     }
 
-    private void Filter_Changed(object sender, RoutedEventArgs e) => UpdateFilterVisuals();
+    private void Filter_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateFilterVisuals();
+        if (!ReferenceEquals(sender, IncludeXmlBox))
+            MarkFiltersChanged();
+    }
 
     private void ManualFilter_Changed(object sender, RoutedEventArgs e)
     {
+        _quickQuery = null;
         UpdateFilterVisuals();
+        MarkFiltersChanged();
+    }
+
+    private void MarkFiltersChanged()
+    {
+        if (IsLoaded && _operationCancellation is null && !_changingLanguage)
+            SetOperationStatus(() => Localization.Text("FiltersChanged"));
     }
 
     private void UpdateFilterVisuals()
     {
-        if (ActiveFiltersText is null || SearchBox is null || TimeBox.SelectedItem is not ComboBoxItem timeItem ||
+        if (ActiveFiltersText is null || IncludeXmlBox is null || SearchBox is null || TimeBox.SelectedItem is not ComboBoxItem timeItem ||
             LevelBox.SelectedItem is not ComboBoxItem levelItem || SortBox.SelectedItem is not ComboBoxItem sortItem)
             return;
 
@@ -507,6 +611,10 @@ public partial class MainWindow : Window, IDisposable
         if (IncludeXmlBox.IsChecked == true)
             parts.Add(IncludeXmlBox.Content.ToString()!);
         ActiveFiltersText.Text = Localization.Format("ActiveFilters", string.Join(" · ", parts));
+        SourceText.Text = _eventFile is null ? Localization.Text("LocalLogs") : Path.GetFileName(_eventFile);
+        SourceText.ToolTip = _eventFile;
+        Title = _eventFile is null ? "EventFast" : $"EventFast — {Path.GetFileName(_eventFile)}";
+        LocalSourceButton.Visibility = _eventFile is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void SetFilterActive(Control control, bool active, bool quickButton = false)
@@ -527,7 +635,11 @@ public partial class MainWindow : Window, IDisposable
 
     internal void ApplyLanguage(string language, bool persist = true)
     {
+        if (_operationCancellation is not null)
+            return;
         var selectedGroup = EventsGrid.SelectedItem as ProblemGroup;
+        var selectedGroupRows = EventsGrid.SelectedItems.OfType<ProblemGroup>()
+            .Select(group => group.Events[0]).ToHashSet(ReferenceEqualityComparer.Instance);
         var selectedOccurrence = OccurrencesGrid.SelectedItem as EventRow;
         var selectedTab = DetailsTabs.SelectedIndex;
         _changingLanguage = true;
@@ -549,8 +661,11 @@ public partial class MainWindow : Window, IDisposable
             _groups = ProblemGrouping.Group(displayedRows);
             ApplySort();
             var replacement = selectedGroup is null ? null : _groups.FirstOrDefault(group =>
-                group.Events.Any(row => selectedGroup.Events.Any(selected => ReferenceEquals(row, selected))));
+                ReferenceEquals(group.Events[0], selectedGroup.Events[0]));
             EventsGrid.SelectedItem = replacement;
+            foreach (var group in _groups.Where(group => selectedGroupRows.Contains(group.Events[0])))
+                if (!EventsGrid.SelectedItems.Contains(group))
+                    EventsGrid.SelectedItems.Add(group);
             OccurrencesGrid.ItemsSource = replacement?.Events;
             OccurrencesGrid.SelectedItem = selectedOccurrence;
             OccurrencesTab.Header = replacement is null
@@ -569,6 +684,9 @@ public partial class MainWindow : Window, IDisposable
         StatusText.ToolTip = null;
         StatusText.Text = _operationStatus?.Invoke() ?? Localization.Text("LanguageChanged");
         UpdateFilterVisuals();
+        SetEmptyState(_emptyStateKey);
+        if (_selectedRow is not null && !CopyFullButton.IsEnabled)
+            _ = LoadSelectedDetailsAsync(_selectedRow, showContent: false);
     }
 
     private void EventsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -580,6 +698,7 @@ public partial class MainWindow : Window, IDisposable
         DetailsBox.Text = "";
         _selectedXml = "";
         CopyXmlButton.IsEnabled = false;
+        CopyFullButton.IsEnabled = false;
         _selectedRow = null;
         _selectedMessage = null;
         ParsedXmlStatus.Text = "";
@@ -589,6 +708,7 @@ public partial class MainWindow : Window, IDisposable
             OccurrencesGrid.ItemsSource = group.Events;
             OccurrencesTab.Header = Localization.Format("GroupedEventsCount", group.Count);
             DetailsTabs.SelectedIndex = 0;
+            OccurrencesGrid.SelectedItem = group.Events[^1];
         }
         else
         {
@@ -658,10 +778,16 @@ public partial class MainWindow : Window, IDisposable
             return;
 
         if (OccurrencesGrid.SelectedItem is EventRow row)
+            await LoadSelectedDetailsAsync(row, showContent: false);
+    }
+
+    private async void OccurrencesGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (OccurrencesGrid.SelectedItem is EventRow row)
             await LoadSelectedDetailsAsync(row);
     }
 
-    private async Task LoadSelectedDetailsAsync(EventRow? selectedRow = null)
+    private async Task LoadSelectedDetailsAsync(EventRow? selectedRow = null, bool showContent = true)
     {
         if (EventsGrid.SelectedItem is not ProblemGroup group)
             return;
@@ -670,11 +796,12 @@ public partial class MainWindow : Window, IDisposable
         var request = ++_detailsLoadVersion;
         _selectedRow = row;
         _selectedMessage = row.Message ?? row.Details;
-        if (DetailsTabs.SelectedItem != ParsedXmlTab)
+        if (showContent && DetailsTabs.SelectedItem != ParsedXmlTab)
             DetailsTabs.SelectedItem = EventContentTab;
         DetailsBox.Text = Localization.Text("LoadingDetails");
         _selectedXml = "";
         CopyXmlButton.IsEnabled = false;
+        CopyFullButton.IsEnabled = false;
         ParsedXmlStatus.Text = "";
         ParsedXmlTree.ItemsSource = null;
         (string Message, string Xml) content;
@@ -697,6 +824,7 @@ public partial class MainWindow : Window, IDisposable
         _selectedMessage = content.Message;
         _selectedXml = content.Xml;
         CopyXmlButton.IsEnabled = !string.IsNullOrEmpty(content.Xml);
+        CopyFullButton.IsEnabled = true;
         DetailsBox.Text = FormatDetails(group, row, content.Message);
         UpdateParsedXml(content.Xml);
     }
@@ -766,7 +894,7 @@ public partial class MainWindow : Window, IDisposable
     private void CopyProblem_Click(object sender, RoutedEventArgs e)
     {
         if (EventsGrid.SelectedItem is ProblemGroup group)
-            Clipboard.SetText(FormatSummary(group));
+            CopyText(FormatSummary(group));
     }
 
     internal static string FormatSummary(ProblemGroup group) =>
@@ -780,13 +908,26 @@ public partial class MainWindow : Window, IDisposable
     private void CopyFull_Click(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrEmpty(DetailsBox.Text))
-            Clipboard.SetText(DetailsBox.Text);
+            CopyText(DetailsBox.Text);
     }
 
     private void CopyXml_Click(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrEmpty(_selectedXml))
-            Clipboard.SetText(_selectedXml);
+            CopyText(_selectedXml);
+    }
+
+    private void CopyText(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text);
+            SetOperationStatus(() => Localization.Text("Copied"));
+        }
+        catch (ExternalException)
+        {
+            SetOperationStatus(() => Localization.Text("ClipboardBusy"));
+        }
     }
 
     private void SetOperationStatus(Func<string> status)
@@ -794,6 +935,25 @@ public partial class MainWindow : Window, IDisposable
         _operationStatus = status;
         StatusText.Text = status();
     }
+
+    private void SetEmptyState(string key)
+    {
+        _emptyStateKey = key;
+        EmptyStateText.Text = Localization.Text(key);
+    }
+
+    private void UpdateBusyState()
+    {
+        var busy = _operationCancellation is not null;
+        QueryControls.IsEnabled = !busy;
+        SourceControls.IsEnabled = !busy;
+        QuickFilterPanel.IsEnabled = !busy;
+        ExportScopeBox.IsEnabled = IncludeXmlBox.IsEnabled = SortBox.IsEnabled = !busy;
+        BusyProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void Layout_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        FilterScroll.MaxHeight = Math.Clamp(e.NewSize.Height - 440, 64, 210);
 
     protected override void OnClosed(EventArgs e)
     {

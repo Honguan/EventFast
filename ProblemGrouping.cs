@@ -66,14 +66,20 @@ internal static class ProblemClassifier
 
 internal static class ProblemGrouping
 {
-    internal static IReadOnlyList<ProblemGroup> Group(IEnumerable<EventRow> rows)
+    internal static IReadOnlyList<ProblemGroup> Group(IEnumerable<EventRow> rows, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rows);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        return rows
-            .GroupBy(row => (row.Provider, row.EventId, DetailsKey(row)), StringTupleComparer.Instance)
+        var groups = rows
+            .GroupBy(row =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return (row.Provider, row.EventId, DetailsKey(row));
+            }, StringTupleComparer.Instance)
             .Select(group =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var events = group.OrderBy(row => row.Time).ThenBy(row => row.RecordId).ToArray();
                 var severity = events.OrderByDescending(row => SeverityRank(row.Level)).First().Level;
                 var channels = events.Select(row => row.Channel).Where(channel => !string.IsNullOrWhiteSpace(channel)).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -92,6 +98,8 @@ internal static class ProblemGrouping
             .ThenByDescending(group => group.Count)
             .ThenByDescending(group => group.LastSeen)
             .ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
+        return groups;
     }
 
     internal static void SelfTest()

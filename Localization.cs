@@ -11,8 +11,19 @@ public sealed class Localization : INotifyPropertyChanged
 {
     private static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>
     {
+        ["OpenEvtx"] = "Open EVTX", ["ReturnLocal"] = "Local logs", ["LocalLogs"] = "Local Windows event logs",
+        ["EvtxFilter"] = "Windows event logs (*.evtx)|*.evtx", ["Refresh"] = "Refresh", ["ResetFilters"] = "Reset",
+        ["Results"] = "Problems", ["ExportScope"] = "Export scope", ["ResizeDetails"] = "Resize problem details",
+        ["FromDate"] = "Start date", ["ToDate"] = "End date",
+        ["ReadyHint"] = "Find a problem faster. Search local logs or open an EVTX file to begin.",
+        ["NoResultsHint"] = "No matching events. Try a wider time range, all levels, or reset your filters.",
+        ["QueryFailedHint"] = "Could not complete the query. See the status below for details and try again.",
+        ["FiltersReset"] = "Filters reset. Press Search to apply them.",
+        ["FiltersChanged"] = "Filters changed. Press Search to update the displayed results.",
+        ["Copied"] = "Copied to clipboard.", ["ClipboardBusy"] = "Clipboard is busy. Please try copying again.",
+        ["Shortcuts"] = "Ctrl+F Search  ·  Ctrl+O Open EVTX  ·  F5 Refresh  ·  Ctrl+E Export  ·  Esc Cancel",
         ["Search"] = "Search", ["Cancel"] = "Cancel", ["ExportExcel"] = "Export Excel",
-        ["ExportCurrent"] = "Current results", ["ExportSelected"] = "Selected problem", ["ExportAll"] = "All events",
+        ["ExportCurrent"] = "Current results", ["ExportSelected"] = "Selected problems", ["ExportAll"] = "Scanned events",
         ["IncludeXml"] = "Include XML", ["SearchTip"] = "Search keywords, Event ID, or mixed criteria (for example, disk 153)",
         ["Time"] = "Time:", ["Last1Hour"] = "Last hour", ["Last3Hours"] = "Last 3 hours", ["Last6Hours"] = "Last 6 hours",
         ["Last12Hours"] = "Last 12 hours", ["LastHours"] = "Last {0:N0} hours", ["Today"] = "Today", ["Last24Hours"] = "Last 24 hours",
@@ -81,8 +92,19 @@ public sealed class Localization : INotifyPropertyChanged
 
     private static readonly IReadOnlyDictionary<string, string> Chinese = new Dictionary<string, string>
     {
+        ["OpenEvtx"] = "開啟 EVTX", ["ReturnLocal"] = "返回本機", ["LocalLogs"] = "本機 Windows 事件記錄",
+        ["EvtxFilter"] = "Windows 事件記錄 (*.evtx)|*.evtx", ["Refresh"] = "重新整理", ["ResetFilters"] = "重設",
+        ["Results"] = "問題列表", ["ExportScope"] = "匯出範圍", ["ResizeDetails"] = "調整詳細資料高度",
+        ["FromDate"] = "開始日期", ["ToDate"] = "結束日期",
+        ["ReadyHint"] = "快速找出問題：搜尋本機事件記錄，或開啟 EVTX 檔案開始分析。",
+        ["NoResultsHint"] = "沒有符合的事件。請擴大時間範圍、選擇全部等級，或重設篩選。",
+        ["QueryFailedHint"] = "查詢未能完成。請查看下方狀態說明後再試一次。",
+        ["FiltersReset"] = "已重設篩選，按「搜尋」套用。",
+        ["FiltersChanged"] = "篩選已變更，按「搜尋」更新目前顯示的結果。",
+        ["Copied"] = "已複製到剪貼簿。", ["ClipboardBusy"] = "剪貼簿忙碌中，請再試一次。",
+        ["Shortcuts"] = "Ctrl+F 搜尋  ·  Ctrl+O 開啟 EVTX  ·  F5 重新整理  ·  Ctrl+E 匯出  ·  Esc 取消",
         ["Search"] = "搜尋", ["Cancel"] = "取消", ["ExportExcel"] = "匯出 Excel",
-        ["ExportCurrent"] = "目前結果", ["ExportSelected"] = "選取問題", ["ExportAll"] = "全部事件",
+        ["ExportCurrent"] = "目前結果", ["ExportSelected"] = "選取的問題", ["ExportAll"] = "已掃描事件",
         ["IncludeXml"] = "含 XML", ["SearchTip"] = "搜尋關鍵字、Event ID，或混合條件（例如 disk 153）",
         ["Time"] = "時間：", ["Last1Hour"] = "最近 1 小時", ["Last3Hours"] = "最近 3 小時", ["Last6Hours"] = "最近 6 小時",
         ["Last12Hours"] = "最近 12 小時", ["LastHours"] = "最近 {0:N0} 小時", ["Today"] = "今天", ["Last24Hours"] = "最近 24 小時",
