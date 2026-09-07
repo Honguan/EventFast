@@ -8,7 +8,7 @@ EventFast 是可攜式 Windows Event Log 查詢工具，直接讀取 Windows 原
 
 ## 下載與安裝
 
-從 [EventFast v1.0.5 Release](https://github.com/Honguan/EventFast/releases/tag/v1.0.5) 下載 `EventFast-v1.0.5-win-x64.exe`。支援 Windows 10／11 x64；單檔 self-contained，不需安裝程式或額外安裝 .NET Runtime。
+從 [EventFast v1.1.0 Release](https://github.com/Honguan/EventFast/releases/tag/v1.1.0) 下載 `EventFast-v1.1.0-win-x64.exe`。支援 Windows 10／11 x64；單檔 self-contained，不需安裝程式或額外安裝 .NET Runtime。
 
 ## 使用方式
 
@@ -25,7 +25,7 @@ EventFast.exe C:\Logs\system.evtx
 
 選取問題後可查看每次發生的時間與完整訊息；事件 XML 可在獨立的「解析 XML」分頁中以樹狀結構查看。按「匯出 Excel」可輸出問題摘要與完整事件工作表。
 
-目前原始碼另提供「開啟 EVTX」（Ctrl+O）、「返回本機」、「重新整理」（F5）與「重設」。選取發生紀錄時保留清單分頁，雙擊或 Enter 開啟內容；可拖曳分隔線調整詳細區高度。Ctrl／Shift 多選問題後，選擇「選取的問題」匯出。「已掃描事件」仍受本次來源、時間、等級與原生篩選限制。這些改善尚未發布至上述 v1.0.5；詳見[改善紀錄](docs/UI_REVIEW.md)。
+v1.1.0 另提供「開啟 EVTX」（Ctrl+O）、「返回本機」、「重新整理」（F5）與「重設」。選取發生紀錄時保留清單分頁，雙擊或 Enter 開啟內容；可拖曳分隔線調整詳細區高度。Ctrl／Shift 多選問題後，選擇「選取的問題」匯出。「已掃描事件」仍受本次來源、時間、等級與原生篩選限制。完整變更與驗證範圍詳見[改善紀錄](docs/UI_REVIEW.md)。
 
 ## 語言設定
 
