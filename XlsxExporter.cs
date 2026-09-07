@@ -39,6 +39,7 @@ internal static class XlsxExporter
                         : [Localization.Text("ColumnTime", exportLanguage), Localization.Text("ColumnSeverity", exportLanguage), Localization.Text("EventId", exportLanguage), Localization.Text("Provider", exportLanguage), Localization.Text("Channel", exportLanguage), Localization.Text("RecordId", exportLanguage), Localization.Text("Computer", exportLanguage), Localization.Text("ExcelMessage", exportLanguage)],
                     events.Select(row => ExportValues(row, includeXml, contentFactory, exportLanguage)), exportLanguage, cancellationToken);
             }
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporaryPath, path, true);
         }
         finally
@@ -102,7 +103,20 @@ internal static class XlsxExporter
         writer.WriteEndElement();
     }
 
-    private static string Clean(string value) => new(value.Where(character => character is '\t' or '\n' or '\r' || character >= ' ').Take(32_767).ToArray());
+    private static string Clean(string value)
+    {
+        var text = new StringBuilder(Math.Min(value.Length, 32_767));
+        Span<char> characters = stackalloc char[2];
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (rune.Value is not ('\t' or '\n' or '\r') && (rune.Value < ' ' || rune.Value is 0xfffe or 0xffff))
+                continue;
+            if (text.Length + rune.Utf16SequenceLength > 32_767)
+                break;
+            text.Append(characters[..rune.EncodeToUtf16(characters)]);
+        }
+        return text.ToString();
+    }
 
     private static void WriteText(ZipArchive archive, string name, string text)
     {

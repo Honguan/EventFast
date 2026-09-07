@@ -7,8 +7,18 @@ using System.Xml.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Input;
 using EventFast;
 using AppLocalization = EventFast.Localization;
+
+var screenshotsIndex = Array.IndexOf(args, "--screenshots");
+if (screenshotsIndex >= 0)
+{
+    CaptureUiScreenshots(screenshotsIndex + 1 < args.Length ? args[screenshotsIndex + 1] : "artifacts/ui");
+    return;
+}
 
 var tests = new (string Name, Action Run)[]
 {
@@ -310,6 +320,15 @@ static void TestQueryFirstBatchLifecycle()
 
 static void TestGrouping()
 {
+    using var cancellation = new CancellationTokenSource();
+    IEnumerable<EventRow> CancelledRows()
+    {
+        yield return Row(153, "disk", "retry");
+        cancellation.Cancel();
+        yield return Row(153, "disk", "retry");
+    }
+    AssertThrows<OperationCanceledException>(() => ProblemGrouping.Group(CancelledRows(), cancellation.Token));
+    AssertThrows<OperationCanceledException>(() => ProblemGrouping.Group([], cancellation.Token));
     var now = DateTime.Now;
     var groups = ProblemGrouping.Group([
         Row(153, "disk", "Retry sector 123", now.AddMinutes(-2), "Warning"),
@@ -426,6 +445,19 @@ static void TestCancelledExport()
         Assert(File.ReadAllText(path) == "original");
         Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(path)!, $"{Path.GetFileName(path)}.*.tmp").Any());
     });
+    WithPath(path =>
+    {
+        File.WriteAllText(path, "original");
+        using var cancellation = new CancellationTokenSource();
+        IEnumerable<EventRow> Rows()
+        {
+            yield return Row(1, "Provider", "last row");
+            cancellation.Cancel();
+        }
+        AssertThrows<OperationCanceledException>(() => XlsxExporter.Export(path, [], Rows(), cancellationToken: cancellation.Token));
+        Assert(File.ReadAllText(path) == "original");
+        Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(path)!, $"{Path.GetFileName(path)}.*.tmp").Any());
+    });
 }
 
 static void TestFormattedMessageSearch()
@@ -533,6 +565,23 @@ static void TestUnicode()
         XlsxExporter.Export(path, ProblemGrouping.Group([row]), [row]);
         Assert(new FileInfo(path).Length > 0);
     });
+    foreach (var (input, expected) in new[]
+    {
+        (new string('長', 32766) + "😀", new string('長', 32766)),
+        ("正常😀\u0001\uFFFE\uFFFF", "正常😀")
+    })
+    {
+        WithPath(path =>
+        {
+            XlsxExporter.Export(path, [], [Row(1, "Provider", input)]);
+            using var archive = ZipFile.OpenRead(path);
+            using var sheet = archive.GetEntry("xl/worksheets/sheet2.xml")!.Open();
+            XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+            var value = XDocument.Load(sheet).Descendants(ns + "c")
+                .Single(cell => (string?)cell.Attribute("r") == "H2").Descendants(ns + "t").Single().Value;
+            Assert(value == expected);
+        });
+    }
 }
 
 static void TestExcelOpen()
@@ -603,6 +652,90 @@ static void TestNativeLeaks(TimeSpan? duration)
                       $"handles {handleGrowth:+#;-#;0}, private memory {memoryGrowth / 1048576d:+0.0;-0.0;0.0} MB)");
 }
 
+static void CaptureUiScreenshots(string prefix)
+{
+    Exception? failure = null;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+            var scenarios = from language in new[] { "en", "zh-TW" }
+                            from size in new[] { new Size(1180, 820), new Size(820, 700), new Size(820, 560) }
+                            select (language, size, populated: false);
+            foreach (var (language, size, populated) in scenarios.Append(("en", new Size(1180, 820), true)))
+            {
+                AppLocalization.UseLanguage(language);
+                using var window = new MainWindow(new(From: new DateTime(2026, 9, 1), To: new DateTime(2026, 9, 7)));
+                if (populated)
+                {
+                    var rows = new[]
+                    {
+                        Row(153, "disk", "The I/O operation at logical block address 0x12 for Disk 0 was retried.", new DateTime(2026, 9, 7, 14, 32, 10), "Warning"),
+                        Row(153, "disk", "The I/O operation at logical block address 0x34 for Disk 0 was retried.", new DateTime(2026, 9, 7, 14, 31, 0), "Warning"),
+                        Row(1000, "Application Error", "Faulting application: Example.exe; exception code: 0xc0000005.", new DateTime(2026, 9, 7, 13, 15, 22)),
+                        Row(41, "Microsoft-Windows-Kernel-Power", "The system rebooted without cleanly shutting down first.", new DateTime(2026, 9, 7, 9, 2, 15), "Critical")
+                    }.Select(row => row with { Message = row.Details, Xml = "<Event><EventData><Data Name=\"Device\">Disk 0</Data></EventData></Event>" }).ToArray();
+                    var groups = ProblemGrouping.Group(rows);
+                    var grid = (DataGrid)window.FindName("EventsGrid");
+                    grid.ItemsSource = groups;
+                    grid.SelectedItem = groups.First(group => group.EventId == 153);
+                    ((TabControl)window.FindName("DetailsTabs")).SelectedIndex = 1;
+                    var frame = new DispatcherFrame();
+                    var timeout = Stopwatch.StartNew();
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+                    timer.Tick += (_, _) =>
+                    {
+                        if (((Button)window.FindName("CopyXmlButton")).IsEnabled || timeout.Elapsed > TimeSpan.FromSeconds(3))
+                            frame.Continue = false;
+                    };
+                    timer.Start();
+                    Dispatcher.PushFrame(frame);
+                    timer.Stop();
+                    Assert(((Button)window.FindName("CopyXmlButton")).IsEnabled);
+                }
+                var content = (FrameworkElement)window.Content;
+                content.Measure(size);
+                content.Arrange(new Rect(size));
+                content.UpdateLayout();
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+                content.UpdateLayout();
+                foreach (var name in new[] { "SearchBox", "SearchButton", "TimeBox", "FromDate", "ToDate", "LevelBox", "SortBox", "LanguageBox", "ExportButton", "StatusText" })
+                {
+                    var control = (FrameworkElement)window.FindName(name);
+                    var bounds = control.TransformToAncestor(content).TransformBounds(new Rect(control.RenderSize));
+                    if (bounds.Width <= 0 || bounds.Height <= 0 || bounds.Left < -1 || bounds.Right > content.ActualWidth + 1 || bounds.Bottom > content.ActualHeight + 1)
+                        throw new InvalidOperationException($"{language} {size}: {name} is outside the content bounds: {bounds}");
+                }
+                var drawing = new DrawingVisual();
+                using (var context = drawing.RenderOpen())
+                {
+                    context.DrawRectangle(window.Background, null, new Rect(size));
+                    context.DrawRectangle(new VisualBrush(content) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null,
+                        new Rect(content.Margin.Left, content.Margin.Top, content.ActualWidth, content.ActualHeight));
+                }
+                var bitmap = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(drawing);
+                var path = $"{prefix}-{language}-{size.Width}x{size.Height}{(populated ? "-populated" : "")}.png";
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+                using var output = File.Create(path);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                encoder.Save(output);
+                Console.WriteLine($"PASS UI screenshot {path}");
+                window.Close();
+            }
+            app.Shutdown();
+        }
+        catch (Exception exception) { failure = exception; }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    thread.Join();
+    if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+}
+
 static void TestUiQueryCompletion()
 {
     Exception? failure = null;
@@ -612,6 +745,7 @@ static void TestUiQueryCompletion()
         try
         {
             var app = new Application();
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             var window = new MainWindow(new(null, false, 48, null, null, null));
             var eventsGrid = (DataGrid)window.FindName("EventsGrid");
             var occurrencesGrid = (DataGrid)window.FindName("OccurrencesGrid");
@@ -645,34 +779,34 @@ static void TestUiQueryCompletion()
                    detailsBox.Parent is Grid contentGrid && contentGrid.ColumnDefinitions.Count == 0 &&
                    !copyXmlButton.IsEnabled && occurrencesTab.Header.ToString() == "Group Events (2)" &&
                    ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours" &&
-                   searchBox.Style is null && timeBox.Style is not null && levelBox.Style is null &&
-                   systemBox.Style is not null && applicationBox.Style is not null &&
+                   searchBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && timeBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && levelBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue &&
+                   systemBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && applicationBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue &&
                    activeFiltersText.Text.Contains("Last 48 hours") && activeFiltersText.Text.Contains("System + Application"));
             searchBox.Text = "disk 153";
-            Assert(searchBox.Style is not null && activeFiltersText.Text.Contains("Keyword: disk") &&
+            Assert(searchBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Keyword: disk") &&
                    activeFiltersText.Text.Contains("Event ID: 153"));
             searchBox.Clear();
-            Assert(searchBox.Style is null);
+            Assert(searchBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
             includeXmlBox.IsChecked = true;
-            Assert(includeXmlBox.Style is not null && activeFiltersText.Text.Contains("Include XML"));
+            Assert(includeXmlBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Include XML"));
             includeXmlBox.IsChecked = false;
             levelBox.SelectedIndex = 3;
-            Assert(levelBox.Style is not null && activeFiltersText.Text.Contains("All"));
+            Assert(levelBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("All"));
             levelBox.SelectedIndex = 2;
-            Assert(levelBox.Style is null);
+            Assert(levelBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
             var originalTime = timeBox.SelectedItem;
             timeBox.SelectedItem = timeBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == "custom");
-            Assert(fromDate.Style is not null);
+            Assert(fromDate.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue);
             timeBox.SelectedItem = originalTime;
-            Assert(fromDate.Style is null);
+            Assert(fromDate.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
             applicationBox.IsChecked = false;
-            Assert(applicationBox.Style is null && activeFiltersText.Text.Contains("Channels: System"));
+            Assert(applicationBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Channels: System"));
             applicationBox.IsChecked = true;
             window.ApplyLanguage("zh-TW", persist: false);
             Assert(searchButton.Content.ToString() == "搜尋" && occurrencesTab.Header.ToString() == "群組事件 (2)" &&
                    eventsGrid.SelectedItem is ProblemGroup &&
                    occurrencesGrid.Items.Count == 2 && detailsTabs.SelectedIndex == 0 &&
-                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時" && timeBox.Style is not null &&
+                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時" && timeBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue &&
                    activeFiltersText.Text.StartsWith("啟用篩選：") && activeFiltersText.Text.Contains("最近 48 小時"));
             window.ApplyLanguage("en", persist: false);
             Assert(searchButton.Content.ToString() == "Search" && occurrencesTab.Header.ToString() == "Group Events (2)" &&
@@ -681,23 +815,48 @@ static void TestUiQueryCompletion()
             var quickPanel = (WrapPanel)quickWindow.FindName("QuickFilterPanel");
             var wheaButton = quickPanel.Children.OfType<Button>().Single(button => button.Tag.ToString() == "whea");
             var quickSummary = (TextBlock)quickWindow.FindName("ActiveFiltersText");
-            Assert(wheaButton.Style is not null && quickSummary.Text.Contains("Hardware / WHEA") &&
+            Assert(wheaButton.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && quickSummary.Text.Contains("Hardware / WHEA") &&
                    quickSummary.Text.Contains("Channels: System") &&
                    !((CheckBox)quickWindow.FindName("SystemBox")).IsEnabled &&
                    !((CheckBox)quickWindow.FindName("ApplicationBox")).IsEnabled &&
-                   ((TextBox)quickWindow.FindName("SearchBox")).Style is null);
+                   ((TextBox)quickWindow.FindName("SearchBox")).ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
             ((TextBox)quickWindow.FindName("SearchBox")).Text = "disk 153";
-            Assert(wheaButton.Style is not null && ((TextBox)quickWindow.FindName("SearchBox")).Style is null);
+            Assert(wheaButton.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && ((TextBox)quickWindow.FindName("SearchBox")).ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue &&
+                   quickWindow.CurrentStartupOptions().Quick is null);
             quickWindow.ApplyLanguage("zh-TW", persist: false);
-            Assert(wheaButton.Style is not null && quickSummary.Text.Contains("硬體 / WHEA"));
+            Assert(wheaButton.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && quickSummary.Text.Contains("disk"));
             quickWindow.ApplyLanguage("en", persist: false);
             quickWindow.Close();
             var providerWindow = new MainWindow(new(Provider: "disk"));
             Assert(((TextBlock)providerWindow.FindName("ActiveFiltersText")).Text.Contains("Provider: disk"));
+            providerWindow.ResetFilters();
+            var reset = providerWindow.CurrentStartupOptions();
+            Assert(reset.Provider is null && reset.Quick is null && string.IsNullOrEmpty(reset.Query) &&
+                   reset.Hours == 24 && reset.MaximumLevel == 3 && reset.Sort == "default" && reset.Channels!.Count == 2);
             providerWindow.Close();
+            var offlineWindow = new MainWindow(new(EventFile: "sample.evtx"));
+            offlineWindow.ResetFilters();
+            Assert(offlineWindow.CurrentStartupOptions().AllTime &&
+                   !((CheckBox)offlineWindow.FindName("SystemBox")).IsEnabled &&
+                   ((Button)offlineWindow.FindName("LocalSourceButton")).Visibility == Visibility.Visible);
+            var invalidSource = offlineWindow.SetEventSourceAsync("missing.txt");
+            Assert(invalidSource.IsCompletedSuccessfully && offlineWindow.CurrentStartupOptions().EventFile == "sample.evtx");
+            offlineWindow.Close();
+            var otherGroup = ProblemGrouping.Group([Row(1000, "Application Error", "crash")])[0];
+            eventsGrid.ItemsSource = new[] { sampleGroup, otherGroup };
+            eventsGrid.SelectedItems.Add(sampleGroup);
+            eventsGrid.SelectedItems.Add(otherGroup);
+            Assert(window.SelectedExportRows().Count == 3);
             ((ComboBox)window.FindName("SortBox")).SelectedIndex = 4;
-            Assert(((ComboBox)window.FindName("SortBox")).Style is not null && activeFiltersText.Text.Contains("Sort: Event ID"));
+            Assert(((ComboBox)window.FindName("SortBox")).ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Sort: Event ID"));
             window.Show();
+            searchBox.Focus();
+            var enter = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, Key.Enter)
+            {
+                RoutedEvent = Keyboard.PreviewKeyDownEvent
+            };
+            searchBox.RaiseEvent(enter);
+            Assert(!enter.Handled);
             window.Hide();
             Assert(detailsBox.Padding == new Thickness(12) && detailsBox.FontSize == 14 &&
                    TextBlock.GetLineHeight(detailsBox) == 22 && detailsBox.FontFamily.Source == "Microsoft JhengHei UI");
@@ -707,19 +866,59 @@ static void TestUiQueryCompletion()
                    restartState.Channels!.Order().SequenceEqual(new[] { "Application", "System" }));
             var stopwatch = Stopwatch.StartNew();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-            timer.Tick += (_, _) =>
+            timer.Tick += async (_, _) =>
             {
                 var status = ((TextBlock)window.FindName("StatusText")).Text;
                 var searchEnabled = searchButton.IsEnabled;
                 if (searchEnabled && !status.Contains("Querying", StringComparison.Ordinal))
                 {
-                    var eventIds = eventsGrid.Items.Cast<ProblemGroup>().Select(group => group.EventId).ToArray();
-                    Assert(eventIds.SequenceEqual(eventIds.Order()) && status.StartsWith("Scanned", StringComparison.Ordinal));
-                    window.ApplyLanguage("zh-TW", persist: false);
-                    var localizedStatus = ((TextBlock)window.FindName("StatusText")).Text;
-                    Assert(localizedStatus.StartsWith("掃描", StringComparison.Ordinal) &&
-                           !localizedStatus.Contains("背景查詢中", StringComparison.Ordinal));
                     timer.Stop();
+                    try
+                    {
+                        var eventIds = eventsGrid.Items.Cast<ProblemGroup>().Select(group => group.EventId).ToArray();
+                        Assert(eventIds.SequenceEqual(eventIds.Order()) && status.StartsWith("Scanned", StringComparison.Ordinal));
+                        window.ApplyLanguage("zh-TW", persist: false);
+                        var localizedStatus = ((TextBlock)window.FindName("StatusText")).Text;
+                        Assert(localizedStatus.StartsWith("掃描", StringComparison.Ordinal) &&
+                               !localizedStatus.Contains("背景查詢中", StringComparison.Ordinal));
+                        var completedGroups = eventsGrid.Items.Cast<ProblemGroup>().ToArray();
+                        var selection = completedGroups.Take(2).ToArray();
+                        eventsGrid.SelectedItems.Clear();
+                        foreach (var group in selection) eventsGrid.SelectedItems.Add(group);
+                        ((ComboBox)window.FindName("SortBox")).SelectedIndex = 1;
+                        if (!eventsGrid.SelectedItems.Cast<ProblemGroup>().ToHashSet().SetEquals(selection))
+                            throw new InvalidOperationException($"Sort selection changed: expected {selection.Length}, actual {eventsGrid.SelectedItems.Count}; expected rows still present: {selection.Count(group => eventsGrid.Items.Contains(group))}");
+                        ((ComboBox)window.FindName("SortBox")).SelectedIndex = 4;
+                        var previousOptions = window.CurrentStartupOptions().ToArguments().ToArray();
+                        var refresh = window.RunQueryAsync(null, refresh: true);
+                        Assert(!searchButton.IsEnabled && ((Button)window.FindName("CancelButton")).IsEnabled);
+                        window.ResetFilters();
+                        await window.SetEventSourceAsync("missing.evtx");
+                        Assert(previousOptions.SequenceEqual(window.CurrentStartupOptions().ToArguments()));
+                        Assert(window.RunQueryAsync(null).IsCompletedSuccessfully);
+                        ((Button)window.FindName("CancelButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        await refresh;
+                        Assert(searchButton.IsEnabled && eventsGrid.Items.Cast<ProblemGroup>().SequenceEqual(completedGroups));
+                        Console.WriteLine("PASS UI busy guards and cancelled-query restoration");
+                        var evtxPath = Path.Combine(Path.GetTempPath(), $"EventFast-Ui-{Guid.NewGuid():N}.evtx");
+                        try
+                        {
+                            var exportInfo = new ProcessStartInfo("wevtutil.exe") { UseShellExecute = false, CreateNoWindow = true };
+                            foreach (var argument in new[] { "epl", "System", evtxPath, "/ow:true" }) exportInfo.ArgumentList.Add(argument);
+                            using var export = Process.Start(exportInfo) ?? throw new InvalidOperationException("Cannot start wevtutil.");
+                            await export.WaitForExitAsync();
+                            Assert(export.ExitCode == 0);
+                            await window.SetEventSourceAsync(evtxPath);
+                            Assert(window.CurrentStartupOptions().EventFile == evtxPath && window.CurrentStartupOptions().AllTime &&
+                                   !systemBox.IsEnabled && ((TextBlock)window.FindName("SourceText")).Text == Path.GetFileName(evtxPath));
+                            await window.SetEventSourceAsync(null);
+                            Assert(window.CurrentStartupOptions().EventFile is null && window.CurrentStartupOptions().Hours == 24 &&
+                                   systemBox.IsEnabled && ((Button)window.FindName("LocalSourceButton")).Visibility == Visibility.Collapsed);
+                            Console.WriteLine("PASS UI EVTX/local source switching");
+                        }
+                        finally { File.Delete(evtxPath); }
+                    }
+                    catch (Exception exception) { failure = exception; }
                     window.Close();
                     app.Shutdown();
                     Console.WriteLine($"PASS UI query completion ({stopwatch.Elapsed.TotalMilliseconds:F0} ms, {status})");
@@ -749,7 +948,7 @@ static void TestUiQueryCompletion()
     if (!finished.Wait(TimeSpan.FromSeconds(10)))
         throw new TimeoutException("UI test thread did not stop.");
     if (failure is not null)
-        throw failure;
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
 }
 
 static EventRow Row(int id, string provider, string details, DateTime? time = null, string level = "Error") =>

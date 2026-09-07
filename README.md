@@ -8,7 +8,7 @@ EventFast is a portable Windows Event Log query tool. It reads the native Window
 
 ## Download and installation
 
-Download `EventFast-v1.0.5-win-x64.exe` from the [EventFast v1.0.5 release](https://github.com/Honguan/EventFast/releases/tag/v1.0.5). It supports Windows 10 and 11 x64, is self-contained, and requires neither an installer nor a separate .NET runtime.
+Download `EventFast-v1.1.0-win-x64.exe` from the [EventFast v1.1.0 release](https://github.com/Honguan/EventFast/releases/tag/v1.1.0). It supports Windows 10 and 11 x64, is self-contained, and requires neither an installer nor a separate .NET runtime.
 
 ## Usage
 
@@ -24,6 +24,8 @@ EventFast.exe C:\Logs\system.evtx
 ```
 
 Select a problem to inspect each occurrence and complete message; use the dedicated **Parsed XML** tab for structured event XML. Use **Export Excel** to create problem-summary and complete-event worksheets.
+
+Version 1.1.0 also provides **Open EVTX** (Ctrl+O), **Local logs**, **Refresh** (F5), and **Reset**. Selecting an occurrence keeps the list tab open; double-click or press Enter to open its content. Drag the divider to resize the details pane. Use Ctrl/Shift to select multiple problems, then export **Selected problems**. **Scanned events** remains limited by the current source, time, severity, and native filters. See the [review log](docs/UI_REVIEW.md) for changes and validation limits.
 
 ## Language setting
 
