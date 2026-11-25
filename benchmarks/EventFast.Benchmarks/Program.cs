@@ -4,9 +4,9 @@ using EventFast;
 var cases = new[]
 {
     ("System 24h warning+", "System", new QueryCriteria(3, TimeSpan.FromHours(24), null, null)),
-    ("System 30d Event 51", "System", new QueryCriteria(0, TimeSpan.FromDays(30), 51, null)),
-    ("System 30d Event 153", "System", new QueryCriteria(0, TimeSpan.FromDays(30), 153, null)),
-    ("Application 30d Event 1000", "Application", new QueryCriteria(0, TimeSpan.FromDays(30), 1000, null)),
+    ("System 30d Event 51", "System", new QueryCriteria(0, TimeSpan.FromDays(30), [51], null)),
+    ("System 30d Event 153", "System", new QueryCriteria(0, TimeSpan.FromDays(30), [153], null)),
+    ("Application 30d Event 1000", "Application", new QueryCriteria(0, TimeSpan.FromDays(30), [1000], null)),
     ("System 30d disk providers", "System", EventQuery.FromQuick(EventQuery.QuickQueries["disk"], 0, TimeSpan.FromDays(30)))
 };
 
@@ -51,7 +51,8 @@ try
 {
     using var contentReader = WindowsEventReader.CreateMessageFormatter();
     var nativeExportWatch = Stopwatch.StartNew();
-    XlsxExporter.Export(nativeExportPath, ProblemGrouping.Group(nativeExportRows), nativeExportRows, true,
+    XlsxExporter.Export(nativeExportPath, ProblemGrouping.Group(nativeExportRows),
+        contentReader.Preload(nativeExportRows, true, CancellationToken.None), true,
         row => contentReader.ReadContent(row, includeXml: true));
     nativeExportWatch.Stop();
     Console.WriteLine($"Native Message/XML export\t{nativeExportRows.Count}\t-\t{nativeExportWatch.Elapsed.TotalMilliseconds:F1}\t-\t-\t-");

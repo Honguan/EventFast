@@ -33,45 +33,32 @@ internal static class ProblemClassifier
     }
 
     private static string? ClassificationKey(string provider, int eventId) =>
-        provider switch
-        {
-            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 153 => "ProblemDiskRetry",
-            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId == 51 => "ProblemDiskError",
-            var p when p.Equals("disk", StringComparison.OrdinalIgnoreCase) && eventId is 7 or 11 or 157 => "ProblemStorageError",
-            var p when (p.Equals("storahci", StringComparison.OrdinalIgnoreCase) || p.Equals("stornvme", StringComparison.OrdinalIgnoreCase) || p.Equals("storport", StringComparison.OrdinalIgnoreCase)) && eventId == 129 => "ProblemStorageTimeout",
-            var p when (p.Equals("Ntfs", StringComparison.OrdinalIgnoreCase) || p.Equals("Microsoft-Windows-Ntfs", StringComparison.OrdinalIgnoreCase)) && eventId == 55 => "ProblemNtfsCorruption",
-            var p when (p.Equals("Ntfs", StringComparison.OrdinalIgnoreCase) || p.Equals("Microsoft-Windows-Ntfs", StringComparison.OrdinalIgnoreCase)) && eventId is 98 or 140 => "ProblemNtfsEvent",
-            var p when EventQuery.MatchesQuick("disk", p, eventId) => "ProblemStorageEvent",
-            var p when p.EndsWith("Kernel-Power", StringComparison.OrdinalIgnoreCase) && eventId == 41 => "ProblemUnexpectedShutdown",
-            var p when p.Equals("EventLog", StringComparison.OrdinalIgnoreCase) && eventId == 6008 => "ProblemUnexpectedShutdown",
-            var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1000 => "ProblemAppCrash",
-            var p when p.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && eventId == 1001 => "ProblemAppFailure",
-            var p when p.Equals(".NET Runtime", StringComparison.OrdinalIgnoreCase) && eventId == 1026 => "ProblemDotNetFailure",
-            var p when p.Equals("Windows Error Reporting", StringComparison.OrdinalIgnoreCase) && eventId == 1001 => "ProblemWerReport",
-            var p when EventQuery.MatchesQuick("whea", p, eventId) => "ProblemWheaEvent",
-            var p when (p.Equals("Microsoft-Windows-Kernel-PnP", StringComparison.OrdinalIgnoreCase) || p.Equals("Kernel-PnP", StringComparison.OrdinalIgnoreCase)) && eventId == 219 => "ProblemDriverLoadFailure",
-            var p when (p.Equals("Microsoft-Windows-Kernel-PnP", StringComparison.OrdinalIgnoreCase) || p.Equals("Kernel-PnP", StringComparison.OrdinalIgnoreCase)) && eventId == 225 => "ProblemDeviceRemoval",
-            var p when (p.Equals("Microsoft-Windows-Kernel-PnP", StringComparison.OrdinalIgnoreCase) || p.Equals("Kernel-PnP", StringComparison.OrdinalIgnoreCase)) && eventId == 411 => "ProblemDeviceStartFailure",
-            var p when p.Equals("Service Control Manager", StringComparison.OrdinalIgnoreCase) && eventId is 7000 or 7001 or 7026 => "ProblemDriverLoadFailure",
-            var p when p.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase) && eventId == 19 => "ProblemUpdateSuccess",
-            var p when p.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase) && eventId is 20 or 25 or 31 => "ProblemUpdateFailure",
-            var p when p.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase) && eventId == 34 => "ProblemUpdateEvent",
-            var p when p.Equals("Microsoft-Windows-DNS-Client", StringComparison.OrdinalIgnoreCase) && eventId == 1014 => "ProblemDnsTimeout",
-            var p when p.Equals("Tcpip", StringComparison.OrdinalIgnoreCase) && eventId == 4201 => "ProblemNetworkEvent",
-            var p when EventQuery.MatchesQuick("network", p, eventId) => "ProblemNetworkEvent",
-            var p when EventQuery.MatchesQuick("usb", p, eventId) => "ProblemUsbEvent",
-            _ => null
-        };
+        EventQuery.ProblemRules.FirstOrDefault(rule => EventQuery.RuleMatches(provider, eventId, rule))?.Problem;
 }
 
-internal static class ProblemGrouping
+internal static partial class ProblemGrouping
 {
+    // Labels are the only language-dependent part of a group, so a language switch rebuilds them without regrouping.
+    internal static ProblemGroup Relabel(ProblemGroup group) => group with
+    {
+        Severity = Localization.Level(group.Events.MaxBy(row => SeverityRank(row.Level))!.Level),
+        Problem = ProblemClassifier.Classify(group.Events[0])
+    };
+
+    internal static ProblemGroup[] RelabelAll(IEnumerable<ProblemGroup> groups) => DefaultOrder(groups.Select(Relabel));
+
+    private static ProblemGroup[] DefaultOrder(IEnumerable<ProblemGroup> groups) => groups
+        .OrderByDescending(group => group.Events.Max(row => SeverityRank(row.Level)))
+        .ThenByDescending(group => group.Count)
+        .ThenByDescending(group => group.LastSeen)
+        .ToArray();
+
     internal static IReadOnlyList<ProblemGroup> Group(IEnumerable<EventRow> rows, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rows);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var groups = rows
+        var groups = DefaultOrder(rows
             .GroupBy(row =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -81,10 +68,10 @@ internal static class ProblemGrouping
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var events = group.OrderBy(row => row.Time).ThenBy(row => row.RecordId).ToArray();
-                var severity = events.OrderByDescending(row => SeverityRank(row.Level)).First().Level;
+                var severity = events.MaxBy(row => SeverityRank(row.Level))!.Level;
                 var channels = events.Select(row => row.Channel).Where(channel => !string.IsNullOrWhiteSpace(channel)).Distinct(StringComparer.OrdinalIgnoreCase);
                 return new ProblemGroup(
-                    SeverityLabel(severity),
+                    Localization.Level(severity),
                     ProblemClassifier.Classify(events[0]),
                     events.Length,
                     events[0].EventId,
@@ -93,11 +80,7 @@ internal static class ProblemGrouping
                     events[^1].Time,
                     string.Join(", ", channels),
                     events);
-            })
-            .OrderByDescending(group => group.Events.Max(row => SeverityRank(row.Level)))
-            .ThenByDescending(group => group.Count)
-            .ThenByDescending(group => group.LastSeen)
-            .ToArray();
+            }));
         cancellationToken.ThrowIfCancellationRequested();
         return groups;
     }
@@ -119,32 +102,40 @@ internal static class ProblemGrouping
 
     private static string DetailsKey(EventRow row)
     {
-        var codes = Regex.Matches(row.Details, @"(?i)\b0x[\da-f]+\b").Select(match => match.Value)
-            .Concat(Regex.Matches(row.Details, @"(?i)\b(?:error|status|code|hresult)\s*[:=]?\s*(?<value>\d+)")
-                .Select(match => match.Groups["value"].Value))
+        var codes = HexCodeRegex().Matches(row.Details).Select(match => match.Value)
+            .Concat(NamedCodeRegex().Matches(row.Details).Select(match => match.Groups["value"].Value))
             .Select(code => code.ToUpperInvariant()).Distinct().Order().ToArray();
         if (row.Provider.Equals("Microsoft-Windows-WindowsUpdateClient", StringComparison.OrdinalIgnoreCase))
             return string.Join('|', codes);
 
-        var value = Regex.Replace(row.Details.Trim(), @"\s+", " ");
-        value = Regex.Replace(value, @"(?i)\b[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\b", "<guid>");
-        value = Regex.Replace(value, @"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[ T]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?\b", "<time>");
-        value = Regex.Replace(value, @"(?i)\b(process|thread|record|sequence)\s*(?:id)?\s*[:=]?\s*\d+\b", "$1 <n>");
-        value = Regex.Replace(value, @"(?i)(?:[A-Z]:\\[^\r\n]*?\\(?:Temp|Tmp)\\|/tmp/)\S+", "<temp>");
-        value = Regex.Replace(value, @"(?i)0x[\da-f]+", "<code>");
-        value = Regex.Replace(value, @"\b\d+\b", "<n>");
+        var value = WhitespaceRegex().Replace(row.Details.Trim(), " ");
+        value = GuidRegex().Replace(value, "<guid>");
+        value = TimestampRegex().Replace(value, "<time>");
+        value = IdentifierRegex().Replace(value, "$1 <n>");
+        value = TempPathRegex().Replace(value, "<temp>");
+        value = AnyHexRegex().Replace(value, "<code>");
+        value = NumberRegex().Replace(value, "<n>");
         return $"{value}|{string.Join('|', codes)}";
     }
 
-    private static string SeverityLabel(string level) => level switch
-    {
-        "Critical" => Localization.Level("Critical"),
-        "Error" => Localization.Level("Error"),
-        "Warning" => Localization.Level("Warning"),
-        "Information" => Localization.Level("Information"),
-        "Verbose" => Localization.Level("Verbose"),
-        _ => Localization.Level("Unknown")
-    };
+    [GeneratedRegex(@"(?i)\b0x[\da-f]+\b")]
+    private static partial Regex HexCodeRegex();
+    [GeneratedRegex(@"(?i)\b(?:error|status|code|hresult)\s*[:=]?\s*(?<value>\d+)")]
+    private static partial Regex NamedCodeRegex();
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex WhitespaceRegex();
+    [GeneratedRegex(@"(?i)\b[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\b")]
+    private static partial Regex GuidRegex();
+    [GeneratedRegex(@"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[ T]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?\b")]
+    private static partial Regex TimestampRegex();
+    [GeneratedRegex(@"(?i)\b(process|thread|record|sequence)\s*(?:id)?\s*[:=]?\s*\d+\b")]
+    private static partial Regex IdentifierRegex();
+    [GeneratedRegex(@"(?i)(?:[A-Z]:\\[^\r\n]*?\\(?:Temp|Tmp)\\|/tmp/)\S+")]
+    private static partial Regex TempPathRegex();
+    [GeneratedRegex(@"(?i)0x[\da-f]+")]
+    private static partial Regex AnyHexRegex();
+    [GeneratedRegex(@"\b\d+\b")]
+    private static partial Regex NumberRegex();
 
     private static int SeverityRank(string level) => level switch
     {

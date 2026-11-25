@@ -391,7 +391,8 @@ public partial class MainWindow : Window, IDisposable
             {
                 var groups = scope == "current" ? currentGroups : ProblemGrouping.Group(rows, operation.Token);
                 using var formatter = WindowsEventReader.CreateMessageFormatter();
-                XlsxExporter.Export(dialog.FileName, groups, rows, includeXml, row => formatter.ReadContent(row, includeXml),
+                XlsxExporter.Export(dialog.FileName, groups, formatter.Preload(rows, includeXml, operation.Token), includeXml,
+                    row => formatter.ReadContent(row, includeXml),
                     exportLanguage, operation.Token);
             }, operation.Token);
             SetOperationStatus(() => Localization.Format("Exported", Path.GetFileName(dialog.FileName)));
@@ -575,7 +576,7 @@ public partial class MainWindow : Window, IDisposable
         var channelsOverridden = quick?.Channels is { Length: > 0 };
         var channelsEditable = _eventFile is null && !channelsOverridden;
         SystemBox.IsEnabled = ApplicationBox.IsEnabled = channelsEditable;
-        SetFilterActive(SearchBox, criteria?.Keyword is not null || criteria?.EventId is not null);
+        SetFilterActive(SearchBox, criteria?.Keyword is not null || criteria?.EventIds is not null);
         SetFilterActive(TimeBox, timeItem.Tag.ToString() != "24");
         var custom = timeItem.Tag.ToString() == "custom";
         SetFilterActive(FromDate, custom);
@@ -593,8 +594,8 @@ public partial class MainWindow : Window, IDisposable
             parts.Add(Localization.Text(quick.Name));
         if (criteria?.Keyword is { } keyword)
             parts.Add(Localization.Format("FilterKeyword", keyword));
-        if (criteria?.EventId is { } eventId)
-            parts.Add($"{Localization.Text("EventId")}: {eventId}");
+        if (criteria?.EventIds is { } eventIds)
+            parts.Add($"{Localization.Text("EventId")}: {string.Join(", ", eventIds)}");
         if (criteria?.Providers is { Count: > 0 })
             parts.Add(Localization.Format("FilterProvider", string.Join(", ", criteria.Providers)));
         parts.Add(timeItem.Content.ToString()!);
@@ -655,10 +656,7 @@ public partial class MainWindow : Window, IDisposable
             if (_customHoursItem is not null && int.TryParse(_customHoursItem.Tag.ToString(), out var hours))
                 _customHoursItem.Content = Localization.Format("LastHours", hours);
 
-            var displayedRows = EventsGrid.ItemsSource is IEnumerable<ProblemGroup> displayed
-                ? Enumerable.Distinct<EventRow>(displayed.SelectMany(group => group.Events), ReferenceEqualityComparer.Instance)
-                : _rows;
-            _groups = ProblemGrouping.Group(displayedRows);
+            _groups = ProblemGrouping.RelabelAll(EventsGrid.ItemsSource as IEnumerable<ProblemGroup> ?? _groups);
             ApplySort();
             var replacement = selectedGroup is null ? null : _groups.FirstOrDefault(group =>
                 ReferenceEquals(group.Events[0], selectedGroup.Events[0]));

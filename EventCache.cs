@@ -34,7 +34,7 @@ internal sealed class EventCache
     }
 
     private static long Estimate(EventRow row) =>
-        128L + (row.Provider.Length + row.Channel.Length + row.Computer.Length + row.Details.Length + row.Xml.Length) * sizeof(char);
+        128L + (row.Provider.Length + row.Channel.Length + row.Computer.Length + row.Details.Length + row.Xml.Length + (row.Message?.Length ?? 0)) * sizeof(char);
 
     internal static void SelfTest()
     {

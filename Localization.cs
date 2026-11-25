@@ -190,11 +190,7 @@ public sealed class Localization : INotifyPropertyChanged
     internal static string FormatForLanguage(string key, string language, params object?[] args) =>
         string.Format(CultureInfo.GetCultureInfo(Normalize(language)), Text(key, language), args);
     internal static bool ResourcesMatch => English.Keys.Order().SequenceEqual(Chinese.Keys.Order());
-    internal static string Level(string level) => Text(level switch
-    {
-        "Critical" => "LevelCritical", "Error" => "LevelError", "Warning" => "LevelWarning",
-        "Information" => "LevelInformation", "Verbose" => "LevelVerbose", _ => "LevelUnknown"
-    });
+    internal static string Level(string level) => Level(level, Instance.CurrentLanguage);
     internal static string Level(string level, string language) => Text(level switch
     {
         "Critical" => "LevelCritical", "Error" => "LevelError", "Warning" => "LevelWarning",

@@ -79,7 +79,7 @@ if (args.Contains("--integration"))
         {
             var sample = rows[0];
             var byId = WindowsEventReader.Read(channel,
-                EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), sample.EventId, null)), CancellationToken.None, 25);
+                EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), [sample.EventId], null)), CancellationToken.None, 25);
             Assert(byId.Count > 0 && byId.All(row => row.EventId == sample.EventId));
 
             var byProvider = WindowsEventReader.Read(channel,
@@ -136,6 +136,30 @@ if (args.Contains("--integration"))
         Assert(new FileInfo(path).Length > 0);
     });
     Console.WriteLine("PASS Native Message/XML XLSX export");
+
+    var preloadRows = WindowsEventReader.Read("System", EventQuery.BuildXPath(new(0, TimeSpan.FromDays(30), null, null)), CancellationToken.None, 1500);
+    // Every third row leaves record-ID gaps inside each range; the repeated first rows check duplicate record IDs.
+    var sparseRows = preloadRows.Where((_, index) => index % 3 == 0).Concat(preloadRows.Take(5)).ToArray();
+    using (var preloader = WindowsEventReader.CreateMessageFormatter())
+    using (var single = WindowsEventReader.CreateMessageFormatter())
+    {
+        var compared = 0;
+        foreach (var row in preloader.Preload(sparseRows, true, CancellationToken.None))
+        {
+            var content = preloader.ReadContent(row, includeXml: true);
+            if (compared++ % 25 == 0)
+                Assert(content == single.ReadContent(row, includeXml: true));
+            Assert(content.Xml.Contains($"<EventRecordID>{row.RecordId}</EventRecordID>", StringComparison.Ordinal));
+        }
+        Assert(compared == sparseRows.Length);
+        var missing = messageRows.FirstOrDefault();
+        if (missing is not null)
+        {
+            missing = missing with { Provider = "EventFast-Missing-Provider" };
+            Assert(single.Format(missing) == missing.Details && single.Format(missing) == missing.Details);
+        }
+    }
+    Console.WriteLine($"PASS Preloaded export content matches single reads ({sparseRows.Length} rows)");
 
     AssertThrows<InvalidOperationException>(() => WindowsEventReader.Read("EventFast-Missing-Channel", "*", CancellationToken.None));
     Console.WriteLine("PASS Missing channel error mapping");
@@ -223,7 +247,10 @@ return;
 static void TestParser()
 {
     var query = EventQuery.Parse("NVIDIA crash 1000", 3, TimeSpan.FromHours(12));
-    Assert(query.EventId == 1000 && query.Keyword == "NVIDIA crash" && query.Period == TimeSpan.FromHours(12));
+    Assert(query.EventIds is [1000] && query.Keyword == "NVIDIA crash" && query.Period == TimeSpan.FromHours(12));
+    var multiple = EventQuery.Parse("disk 51 153", 3, TimeSpan.FromHours(1));
+    Assert(multiple.EventIds is [51, 153] && EventQuery.BuildXPath(multiple).Contains("((EventID=51 or EventID=153))") &&
+           EventQuery.Matches(Row(153, "disk", "retry"), multiple) && !EventQuery.Matches(Row(7, "disk", "retry"), multiple));
 }
 
 static void TestLocalization()
@@ -253,7 +280,7 @@ static void TestLocalization()
 
 static void TestXPath()
 {
-    var xpath = EventQuery.BuildXPath(new(2, TimeSpan.FromHours(3), 51, null));
+    var xpath = EventQuery.BuildXPath(new(2, TimeSpan.FromHours(3), [51], null));
     Assert(xpath.Contains("10800000") && xpath.Contains("Level > 0 and Level <= 2") && xpath.Contains("EventID=51"));
     var custom = EventQuery.BuildXPath(new(3, TimeSpan.Zero, null, null, From: DateTime.Today.AddDays(-7), To: DateTime.Now));
     Assert(custom.Contains("@SystemTime >=") && custom.Contains("@SystemTime <="));
@@ -305,6 +332,17 @@ static void TestQuickFilters()
            ProblemClassifier.Classify("USBHUB", 7) == "USB / UCSI event" &&
            ProblemClassifier.Classify("Microsoft-Windows-WindowsUpdateClient", 19) == "Windows Update installation succeeded" &&
            ProblemClassifier.Classify("Fake-USB-Provider", 7) == "Fake-USB-Provider + Event ID 7");
+    var expected = new (string Provider, int EventId, string Problem)[]
+    {
+        ("disk", 153, "Disk I/O retry"), ("disk", 51, "Disk I/O error"), ("disk", 157, "Disk / storage I/O error"),
+        ("stornvme", 129, "Storage controller timeout"), ("Ntfs", 55, "NTFS file-system corruption"), ("Microsoft-Windows-Ntfs", 98, "NTFS file-system event"),
+        ("volsnap", 25, "Storage event"), ("Kernel-Power", 41, "Unexpected shutdown / power failure"), ("EventLog", 6008, "Unexpected shutdown / power failure"),
+        ("Application Error", 1001, "Application failure"), ("Windows Error Reporting", 1001, "Windows Error Reporting event"),
+        ("Kernel-PnP", 225, "Device removal blocked"), ("Service Control Manager", 7026, "Device / driver load failure"),
+        ("Microsoft-Windows-WindowsUpdateClient", 25, "Windows Update failure"), ("Microsoft-Windows-DNS-Client", 1014, "DNS resolution timeout"),
+        ("Microsoft-Windows-WLAN-AutoConfig", 8001, "Network event"), ("disk", 1, "disk + Event ID 1")
+    };
+    Assert(expected.All(item => ProblemClassifier.Classify(item.Provider, item.EventId) == item.Problem));
 }
 
 static void TestQueryFirstBatchLifecycle()
@@ -355,6 +393,10 @@ static void TestGrouping()
     var chineseGroups = ProblemGrouping.Group(groups.SelectMany(group => group.Events));
     Assert(chineseGroups.Select(group => (group.Provider, group.EventId, group.Count)).Order().SequenceEqual(identity) &&
            chineseGroups.Any(group => group.Problem == "Windows Update 安裝成功"));
+    var relabeled = groups.Select(ProblemGrouping.Relabel).ToArray();
+    Assert(relabeled.Select(group => (group.Provider, group.EventId, group.Count, group.Problem, group.Severity)).Order()
+        .SequenceEqual(chineseGroups.Select(group => (group.Provider, group.EventId, group.Count, group.Problem, group.Severity)).Order()));
+    Assert(EventQuery.ProblemRules.All(rule => AppLocalization.Text(rule.Problem, "en") != rule.Problem));
     var fallback = Row(999, "Unknown", "details");
     Assert(EventQuery.Matches(fallback, EventQuery.Parse("Unknown Event ID", 3, TimeSpan.Zero)));
     AppLocalization.UseLanguage("en");
@@ -365,7 +407,7 @@ static void TestStartupArguments()
     var options = StartupOptions.Parse(["--hours", "24", "--event-id", "51", "--provider", "disk", "--query", "retry"]);
     Assert(options.Hours == 24 && options.EventId == 51 && options.Provider == "disk" && options.Query == "retry" && options.AutoRun);
     var criteria = EventQuery.Parse($"{options.Query} {options.EventId}", 3, TimeSpan.FromHours(options.Hours!.Value), options.Provider);
-    Assert(criteria.Keyword == "retry" && criteria.EventId == 51 && criteria.Providers!.SequenceEqual(["disk"]) &&
+    Assert(criteria.Keyword == "retry" && criteria.EventIds is [51] && criteria.Providers!.SequenceEqual(["disk"]) &&
            EventQuery.BuildXPath(criteria).Contains("Provider[@Name='disk']") &&
            EventQuery.Matches(Row(51, "disk", "retry"), criteria) && !EventQuery.Matches(Row(51, "storport", "retry disk"), criteria));
     var state = new StartupOptions(Query: "重試 路徑 153", Provider: "Application Error",
@@ -374,7 +416,7 @@ static void TestStartupArguments()
     var restored = StartupOptions.Parse(state.ToArguments());
     Assert(restored.Query == state.Query && restored.Provider == state.Provider && restored.From == state.From && restored.To == state.To &&
            restored.MaximumLevel == 2 && restored.Channels!.SequenceEqual(["System"]) && restored.Sort == "provider" && restored.Quick == "disk" &&
-           EventQuery.Parse(restored.Query!, 2, TimeSpan.Zero, restored.Provider).EventId == 153);
+           EventQuery.Parse(restored.Query!, 2, TimeSpan.Zero, restored.Provider).EventIds is [153]);
     var eventFile = Path.Combine(Path.GetTempPath(), $"事件 記錄-{Guid.NewGuid():N}.evtx");
     try
     {

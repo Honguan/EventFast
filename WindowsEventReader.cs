@@ -41,7 +41,7 @@ internal static class WindowsEventReader
 
     internal static IReadOnlyList<EventRow> Read(string channel, string xpath, CancellationToken cancellationToken,
         int maximumRows = 1_000_000, Action<IReadOnlyList<EventRow>>? firstBatch = null, bool filePath = false,
-        bool failIfTruncated = false, bool includeMessage = false)
+        bool failIfTruncated = false, bool includeMessage = false, bool includeXml = false)
     {
         using var query = EvtQuery(IntPtr.Zero, channel, xpath, (filePath ? EvtQueryFilePath : EvtQueryChannelPath) | EvtQueryReverseDirection);
         if (query.IsInvalid)
@@ -80,7 +80,10 @@ internal static class WindowsEventReader
                     handles[index] = IntPtr.Zero;
                     var row = renderer.Render(handle, filePath ? channel : null);
                     var details = userRenderer.TryRender(handle);
-                    row = details is null ? AddDetails(row, RenderXml(handle)) : row with { Details = details };
+                    var xml = details is null || includeXml ? RenderXml(handle) : "";
+                    row = details is null ? AddDetails(row, xml) : row with { Details = details };
+                    if (includeXml)
+                        row = row with { Xml = xml };
                     batch[index] = messageFormatter is null ? row : AddMessage(row, messageFormatter.Format(handle, row));
                 }
 
@@ -163,14 +166,58 @@ internal static class WindowsEventReader
 
     internal sealed class MessageFormatter : IDisposable
     {
-        private readonly Dictionary<(string Provider, string? File), EventHandle> _metadata = [];
+        private const int PreloadChunkSize = 1000;
+        // A gap this small costs less to read through than one extra EvtQuery, which scans the log.
+        private const long PreloadMaximumGap = 64;
+        private readonly Dictionary<(string Provider, string? File), EventHandle?> _metadata = [];
+        private Dictionary<(string Source, long RecordId), (string Message, string Xml)> _preloaded = [];
 
         internal string Format(EventRow row) => ReadContent(row, includeXml: false).Message;
+
+        // Streams rows in chunks and loads each chunk's content with record-ID range queries instead of one query per row;
+        // ReadContent then answers from the current chunk, so callers must read content while enumerating.
+        internal IEnumerable<EventRow> Preload(IEnumerable<EventRow> rows, bool includeXml, CancellationToken cancellationToken) =>
+            rows.Chunk(PreloadChunkSize).SelectMany(chunk =>
+            {
+                _preloaded = ReadRanges(chunk, includeXml, cancellationToken);
+                return chunk;
+            });
+
+        private static Dictionary<(string Source, long RecordId), (string Message, string Xml)> ReadRanges(
+            IEnumerable<EventRow> rows, bool includeXml, CancellationToken cancellationToken)
+        {
+            var contents = new Dictionary<(string Source, long RecordId), (string Message, string Xml)>();
+            foreach (var source in rows.Where(row => row.Message is null || includeXml && row.Xml.Length == 0)
+                         .GroupBy(row => (Path: row.LogFilePath ?? row.Channel, IsFile: row.LogFilePath is not null)))
+            {
+                var ids = source.Select(row => row.RecordId).Distinct().Order().ToArray();
+                for (var start = 0; start < ids.Length;)
+                {
+                    var end = start;
+                    while (end + 1 < ids.Length && ids[end + 1] - ids[end] <= PreloadMaximumGap)
+                        end++;
+                    try
+                    {
+                        foreach (var row in Read(source.Key.Path, $"*[System[EventRecordID >= {ids[start]} and EventRecordID <= {ids[end]}]]",
+                                     cancellationToken, filePath: source.Key.IsFile, includeMessage: true, includeXml: includeXml))
+                            contents[(source.Key.Path, row.RecordId)] = (row.Message ?? row.Details, row.Xml);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        // ReadContent falls back to the single-event path for rows this range could not load.
+                    }
+                    start = end + 1;
+                }
+            }
+            return contents;
+        }
 
         internal (string Message, string Xml) ReadContent(EventRow row, bool includeXml)
         {
             if (row.Message is not null && (!includeXml || row.Xml.Length > 0))
                 return (row.Message, row.Xml);
+            if (_preloaded.TryGetValue((row.LogFilePath ?? row.Channel, row.RecordId), out var preloaded))
+                return preloaded;
 
             var xpath = $"*[System[EventRecordID={row.RecordId}]]";
             using var query = EvtQuery(IntPtr.Zero, row.LogFilePath ?? row.Channel, xpath, row.LogFilePath is null ? EvtQueryChannelPath : EvtQueryFilePath);
@@ -191,14 +238,16 @@ internal static class WindowsEventReader
             if (!_metadata.TryGetValue(key, out var metadata))
             {
                 metadata = EvtOpenPublisherMetadata(IntPtr.Zero, row.Provider, row.LogFilePath, 0, 0);
-                if (!metadata.IsInvalid)
-                    _metadata.Add(key, metadata);
+                if (metadata.IsInvalid)
+                {
+                    metadata.Dispose();
+                    metadata = null;
+                }
+                // A missing publisher is remembered too, so its other events do not reopen the metadata.
+                _metadata.Add(key, metadata);
             }
-            if (metadata.IsInvalid)
-            {
-                metadata.Dispose();
+            if (metadata is null)
                 return row.Details;
-            }
 
             EvtFormatMessage(metadata, handle, 0, 0, IntPtr.Zero, EvtFormatMessageEvent, 0, IntPtr.Zero, out var size);
             if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer || size == 0)
@@ -220,7 +269,7 @@ internal static class WindowsEventReader
         public void Dispose()
         {
             foreach (var handle in _metadata.Values)
-                handle.Dispose();
+                handle?.Dispose();
             _metadata.Clear();
         }
     }
