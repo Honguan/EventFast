@@ -15,6 +15,8 @@ internal sealed record ProblemGroup(
 {
     // Highest raw level; language-independent so the UI can color it.
     public string Level { get; init; } = "";
+    // Latest event's data on one line, so groups with the same problem label can be told apart.
+    public string Summary { get; init; } = "";
 }
 
 internal static class ProblemClassifier
@@ -83,7 +85,7 @@ internal static partial class ProblemGrouping
                     events[0].Time,
                     events[^1].Time,
                     string.Join(", ", channels),
-                    events) { Level = severity };
+                    events) { Level = severity, Summary = Summarize(events[^1].Details) };
             }));
         cancellationToken.ThrowIfCancellationRequested();
         return groups;
@@ -102,6 +104,15 @@ internal static partial class ProblemGrouping
         var groups = Group(rows);
         if (groups.Count != 2 || groups[0].Problem != Localization.Text("ProblemUnexpectedShutdown") || groups[0].Count != 2 || groups[0].FirstSeen != now.AddMinutes(-2))
             throw new InvalidOperationException("Problem grouping self-test failed.");
+    }
+
+    private static string Summarize(string details)
+    {
+        var value = WhitespaceRegex().Replace(details.Trim(), " ");
+        if (value.Length <= 300)
+            return value;
+        var cut = char.IsHighSurrogate(value[298]) ? 298 : 299;
+        return string.Concat(value.AsSpan(0, cut), "…");
     }
 
     private static string DetailsKey(EventRow row)

@@ -25,6 +25,8 @@ public partial class MainWindow : Window, IDisposable
     private string? _eventFile;
     private string? _providerFilter;
     private string? _quickQuery;
+    private bool _compactLayout;
+    private bool _quickFiltersExpanded;
     private string _selectedXml = "";
     private EventRow? _selectedRow;
     private string? _selectedMessage;
@@ -589,6 +591,7 @@ public partial class MainWindow : Window, IDisposable
         SetFilterActive(IncludeXmlBox, IncludeXmlBox.IsChecked == true);
         foreach (var button in QuickFilterPanel.Children.OfType<Button>())
             SetFilterActive(button, button.Tag.ToString() == _quickQuery, quickButton: true);
+        SetFilterActive(QuickToggleButton, _quickQuery is not null);
 
         var parts = new List<string>();
         if (quick is not null)
@@ -969,8 +972,26 @@ public partial class MainWindow : Window, IDisposable
         BusyProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void Layout_SizeChanged(object sender, SizeChangedEventArgs e) =>
+    private void Layout_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
         FilterScroll.MaxHeight = Math.Clamp(e.NewSize.Height - 440, 64, 210);
+        // Short windows hide the quick filters behind a toggle so the result list keeps its space.
+        _compactLayout = e.NewSize.Height < 600;
+        UpdateQuickFilterVisibility();
+    }
+
+    private void QuickToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _quickFiltersExpanded = !_quickFiltersExpanded;
+        UpdateQuickFilterVisibility();
+    }
+
+    private void UpdateQuickFilterVisibility()
+    {
+        QuickToggleButton.Visibility = _compactLayout ? Visibility.Visible : Visibility.Collapsed;
+        QuickFilterPanel.Visibility = !_compactLayout || _quickFiltersExpanded ? Visibility.Visible : Visibility.Collapsed;
+        QuickToggleButton.ContentStringFormat = _quickFiltersExpanded ? "{0} ▴" : "{0} ▾";
+    }
 
     protected override void OnClosed(EventArgs e)
     {

@@ -54,7 +54,13 @@
             <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#E9ECFF" /><Setter Property="Foreground" Value="#303976" /></Trigger>
                 <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="Background" Value="#DDE2FF" /></Trigger></Style.Triggers>
         </Style>
+        <Style TargetType="DatePicker"><Setter Property="MinHeight" Value="30" /><Setter Property="VerticalContentAlignment" Value="Center" /></Style>
+        <Style TargetType="DatePickerTextBox"><Setter Property="VerticalAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" /></Style>
         <Style TargetType="TabItem"><Setter Property="Padding" Value="14,7" /></Style>
+        <Style x:Key="NumberText" TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /></Style>
+        <Style x:Key="NumberHeader" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+        </Style>
         <Style x:Key="TableText" TargetType="TextBlock">
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
@@ -139,6 +145,8 @@
                             <CheckBox x:Name="SystemBox" Content="System" IsChecked="True" Margin="0,0,12,0" VerticalAlignment="Center" Checked="ManualFilter_Changed" Unchecked="ManualFilter_Changed" />
                             <CheckBox x:Name="ApplicationBox" Content="Application" IsChecked="True" VerticalAlignment="Center" Checked="ManualFilter_Changed" Unchecked="ManualFilter_Changed" />
                         </StackPanel>
+                        <Button x:Name="QuickToggleButton" Content="{local:Loc QuickFilters}" ContentStringFormat="{}{0} ▾" Visibility="Collapsed"
+                                Click="QuickToggle_Click" Margin="0,0,16,8" Padding="10,4" />
                     </WrapPanel>
             <WrapPanel x:Name="QuickFilterPanel">
                 <Button Tag="all" Content="{local:Loc QuickAll}" Click="Quick_Click" Margin="0,0,6,6" />
@@ -189,9 +197,23 @@
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding Severity}" Width="95" ElementStyle="{StaticResource SeverityText}" />
-                <DataGridTextColumn Header="{local:Loc ColumnProblem}" Binding="{Binding Problem}" Width="2*" MinWidth="170" ElementStyle="{StaticResource TableText}" />
-                <DataGridTextColumn Header="{local:Loc ColumnCount}" Binding="{Binding Count}" Width="70" />
-                <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" />
+                <DataGridTemplateColumn Header="{local:Loc ColumnProblem}" Width="3*" MinWidth="170" SortMemberPath="Problem">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+                                <TextBlock.ToolTip>
+                                    <StackPanel MaxWidth="600">
+                                        <TextBlock Text="{Binding Problem, Mode=OneWay}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Summary, Mode=OneWay}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </TextBlock.ToolTip>
+                                <Run Text="{Binding Problem, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Summary, Mode=OneWay}" Foreground="#7A8094" />
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="{local:Loc ColumnCount}" Binding="{Binding Count}" Width="70" ElementStyle="{StaticResource NumberText}" HeaderStyle="{StaticResource NumberHeader}" />
+                <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" ElementStyle="{StaticResource NumberText}" HeaderStyle="{StaticResource NumberHeader}" />
                 <DataGridTextColumn Header="{local:Loc ColumnSource}" Binding="{Binding Provider}" Width="2*" MinWidth="170" ElementStyle="{StaticResource TableText}" />
                 <DataGridTextColumn Header="{local:Loc ColumnLastSeen}" Binding="{Binding LastSeen, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
             </DataGrid.Columns>
@@ -204,7 +226,9 @@
             </Border>
         </Grid>
         <GridSplitter Grid.Row="3" Height="8" HorizontalAlignment="Stretch" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="Transparent" ShowsPreview="True" AutomationProperties.Name="{local:Loc ResizeDetails}" />
-        <GroupBox Grid.Row="4" Header="{local:Loc ProblemDetails}" Margin="0" Padding="8" Background="White" BorderBrush="#DDE0E8">
+        <Border Grid.Row="4" Background="White" BorderBrush="#DDE0E8" BorderThickness="1" CornerRadius="8" Padding="12,10,12,12">
+            <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="{local:Loc ProblemDetails}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
             <TabControl x:Name="DetailsTabs">
                 <TabItem x:Name="OccurrencesTab" Header="{local:Loc GroupedEvents}">
                     <DataGrid x:Name="OccurrencesGrid" IsReadOnly="True" AutoGenerateColumns="False"
@@ -214,10 +238,10 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{local:Loc ColumnTime}" Binding="{Binding Time, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
                             <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding DisplayLevel}" Width="90" ElementStyle="{StaticResource SeverityText}" />
-                            <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" />
+                            <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" ElementStyle="{StaticResource NumberText}" HeaderStyle="{StaticResource NumberHeader}" />
                             <DataGridTextColumn Header="{local:Loc ColumnSource}" Binding="{Binding Provider}" Width="2*" MinWidth="150" />
                             <DataGridTextColumn Header="{local:Loc Channel}" Binding="{Binding Channel}" Width="2*" MinWidth="150" />
-                            <DataGridTextColumn Header="{local:Loc RecordId}" Binding="{Binding RecordId}" Width="100" />
+                            <DataGridTextColumn Header="{local:Loc RecordId}" Binding="{Binding RecordId}" Width="100" ElementStyle="{StaticResource NumberText}" HeaderStyle="{StaticResource NumberHeader}" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </TabItem>
@@ -262,7 +286,8 @@
                     </Grid>
                 </TabItem>
             </TabControl>
-        </GroupBox>
+            </DockPanel>
+        </Border>
 
         <StackPanel Grid.Row="5" Margin="0,10,0,0">
             <ProgressBar x:Name="BusyProgress" Height="3" IsIndeterminate="True" Visibility="Collapsed" Foreground="#5E6AD2" Margin="0,0,0,6" AutomationProperties.Name="{local:Loc Querying}" />

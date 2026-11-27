@@ -382,7 +382,8 @@ static void TestGrouping()
         Row(17, "Microsoft-Windows-WHEA-Logger", "corrected", now, "Warning"),
         Row(18, "Microsoft-Windows-WHEA-Logger", "fatal", now, "Error")
     ]);
-    Assert(groups.Count == 9 && groups.Any(group => group.Problem == "Disk I/O retry" && group.Count == 3 && group.Severity == "Error" && group.Level == "Error") &&
+    Assert(groups.Count == 9 && groups.Any(group => group.Problem == "Disk I/O retry" && group.Count == 3 && group.Severity == "Error" && group.Level == "Error" &&
+                                 group.Summary.Length > 0 && !group.Summary.Contains('\n')) &&
            groups.Count(group => group.Provider == "disk") == 1 && groups.Count(group => group.Provider == "Provider") == 4 &&
            groups.Any(group => group.Provider == "Microsoft-Windows-WindowsUpdateClient" && group.Count == 2 &&
                                group.Problem == "Windows Update installation succeeded") &&
@@ -750,6 +751,9 @@ static void CaptureUiScreenshots(string prefix)
                     if (bounds.Width <= 0 || bounds.Height <= 0 || bounds.Left < -1 || bounds.Right > content.ActualWidth + 1 || bounds.Bottom > content.ActualHeight + 1)
                         throw new InvalidOperationException($"{language} {size}: {name} is outside the content bounds: {bounds}");
                 }
+                var compact = size.Height < 600;
+                Assert(((WrapPanel)window.FindName("QuickFilterPanel")).Visibility == (compact ? Visibility.Collapsed : Visibility.Visible) &&
+                       ((Button)window.FindName("QuickToggleButton")).Visibility == (compact ? Visibility.Visible : Visibility.Collapsed));
                 var drawing = new DrawingVisual();
                 using (var context = drawing.RenderOpen())
                 {
