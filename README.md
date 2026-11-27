@@ -8,7 +8,7 @@ EventFast is a portable Windows Event Log query tool. It reads the native Window
 
 ## Download and installation
 
-Download `EventFast-v1.1.1-win-x64.exe` from the [EventFast v1.1.1 Release](https://github.com/Honguan/EventFast/releases/tag/v1.1.1). It supports Windows 10 and 11 x64, is self-contained, and requires neither an installer nor a separate .NET runtime.
+Download `EventFast-v1.2.0-win-x64.exe` from the [EventFast v1.2.0 Release](https://github.com/Honguan/EventFast/releases/tag/v1.2.0). It supports Windows 10 and 11 x64, is self-contained, and requires neither an installer nor a separate .NET runtime.
 
 ## Usage
 
