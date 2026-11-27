@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Win32;
@@ -620,10 +621,28 @@ public partial class MainWindow : Window, IDisposable
 
     private void SetFilterActive(Control control, bool active, bool quickButton = false)
     {
+        if (quickButton)
+        {
+            if (active)
+                control.Style = (Style)FindResource("ActiveQuickButton");
+            else
+                control.ClearValue(StyleProperty);
+            return;
+        }
+
+        // Local values instead of a replacement Style keep the implicit ComboBox/TextBox padding and alignment.
         if (active)
-            control.Style = (Style)FindResource(quickButton ? "ActiveQuickButton" : "ActiveFilterControl");
+        {
+            control.Background = (Brush)FindResource("ActiveFilterBackground");
+            control.Foreground = (Brush)FindResource("ActiveFilterForeground");
+            control.BorderBrush = (Brush)FindResource("ActiveFilterBorder");
+            control.FontWeight = FontWeights.SemiBold;
+        }
         else
-            control.ClearValue(StyleProperty);
+        {
+            foreach (var property in new[] { BackgroundProperty, ForegroundProperty, BorderBrushProperty, FontWeightProperty })
+                control.ClearValue(property);
+        }
     }
 
     private void Language_Changed(object sender, SelectionChangedEventArgs e)

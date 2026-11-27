@@ -11,7 +11,11 @@ internal sealed record ProblemGroup(
     DateTime FirstSeen,
     DateTime LastSeen,
     string Channel,
-    IReadOnlyList<EventRow> Events);
+    IReadOnlyList<EventRow> Events)
+{
+    // Highest raw level; language-independent so the UI can color it.
+    public string Level { get; init; } = "";
+}
 
 internal static class ProblemClassifier
 {
@@ -41,7 +45,7 @@ internal static partial class ProblemGrouping
     // Labels are the only language-dependent part of a group, so a language switch rebuilds them without regrouping.
     internal static ProblemGroup Relabel(ProblemGroup group) => group with
     {
-        Severity = Localization.Level(group.Events.MaxBy(row => SeverityRank(row.Level))!.Level),
+        Severity = Localization.Level(group.Level),
         Problem = ProblemClassifier.Classify(group.Events[0])
     };
 
@@ -79,7 +83,7 @@ internal static partial class ProblemGrouping
                     events[0].Time,
                     events[^1].Time,
                     string.Join(", ", channels),
-                    events);
+                    events) { Level = severity };
             }));
         cancellationToken.ThrowIfCancellationRequested();
         return groups;

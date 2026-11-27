@@ -59,10 +59,15 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
         </Style>
-        <Style x:Key="ActiveFilterControl" TargetType="{x:Type Control}">
-            <Setter Property="Background" Value="#EEF0FF" /><Setter Property="Foreground" Value="#303976" />
-            <Setter Property="BorderBrush" Value="#5E6AD2" /><Setter Property="BorderThickness" Value="1" />
-            <Setter Property="FontWeight" Value="SemiBold" />
+        <SolidColorBrush x:Key="ActiveFilterBackground" Color="#EEF0FF" />
+        <SolidColorBrush x:Key="ActiveFilterForeground" Color="#303976" />
+        <SolidColorBrush x:Key="ActiveFilterBorder" Color="#5E6AD2" />
+        <Style x:Key="SeverityText" TargetType="TextBlock">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="Critical"><Setter Property="Foreground" Value="#B42318" /><Setter Property="FontWeight" Value="Bold" /></DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Error"><Setter Property="Foreground" Value="#C4320A" /><Setter Property="FontWeight" Value="SemiBold" /></DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Warning"><Setter Property="Foreground" Value="#9A5B00" /></DataTrigger>
+            </Style.Triggers>
         </Style>
         <Style x:Key="ActiveQuickButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="#5E6AD2" /><Setter Property="Foreground" Value="White" />
@@ -164,6 +169,7 @@
                     <ComboBoxItem Tag="oldest" Content="{local:Loc Oldest}" /><ComboBoxItem Tag="frequent" Content="{local:Loc MostFrequent}" />
                     <ComboBoxItem Tag="eventId" Content="{local:Loc EventId}" /><ComboBoxItem Tag="provider" Content="Provider" />
                 </ComboBox>
+                <TextBlock Text="{local:Loc ExportLabel}" VerticalAlignment="Center" Margin="0,0,4,0" />
                 <ComboBox x:Name="ExportScopeBox" Width="170" SelectedIndex="0" AutomationProperties.Name="{local:Loc ExportScope}" Margin="0,0,8,0">
                     <ComboBoxItem Tag="current" Content="{local:Loc ExportCurrent}" /><ComboBoxItem Tag="selected" Content="{local:Loc ExportSelected}" /><ComboBoxItem Tag="all" Content="{local:Loc ExportAll}" />
                 </ComboBox>
@@ -182,7 +188,7 @@
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
-                <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding Severity}" Width="95" />
+                <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding Severity}" Width="95" ElementStyle="{StaticResource SeverityText}" />
                 <DataGridTextColumn Header="{local:Loc ColumnProblem}" Binding="{Binding Problem}" Width="2*" MinWidth="170" ElementStyle="{StaticResource TableText}" />
                 <DataGridTextColumn Header="{local:Loc ColumnCount}" Binding="{Binding Count}" Width="70" />
                 <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" />
@@ -207,7 +213,7 @@
                               SelectionChanged="OccurrencesGrid_SelectionChanged" MouseDoubleClick="OccurrencesGrid_MouseDoubleClick">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="{local:Loc ColumnTime}" Binding="{Binding Time, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
-                            <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding DisplayLevel}" Width="90" />
+                            <DataGridTextColumn Header="{local:Loc ColumnSeverity}" Binding="{Binding DisplayLevel}" Width="90" ElementStyle="{StaticResource SeverityText}" />
                             <DataGridTextColumn Header="{local:Loc EventId}" Binding="{Binding EventId}" Width="85" />
                             <DataGridTextColumn Header="{local:Loc ColumnSource}" Binding="{Binding Provider}" Width="2*" MinWidth="150" />
                             <DataGridTextColumn Header="{local:Loc Channel}" Binding="{Binding Channel}" Width="2*" MinWidth="150" />

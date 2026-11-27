@@ -382,7 +382,7 @@ static void TestGrouping()
         Row(17, "Microsoft-Windows-WHEA-Logger", "corrected", now, "Warning"),
         Row(18, "Microsoft-Windows-WHEA-Logger", "fatal", now, "Error")
     ]);
-    Assert(groups.Count == 9 && groups.Any(group => group.Problem == "Disk I/O retry" && group.Count == 3 && group.Severity == "Error") &&
+    Assert(groups.Count == 9 && groups.Any(group => group.Problem == "Disk I/O retry" && group.Count == 3 && group.Severity == "Error" && group.Level == "Error") &&
            groups.Count(group => group.Provider == "disk") == 1 && groups.Count(group => group.Provider == "Provider") == 4 &&
            groups.Any(group => group.Provider == "Microsoft-Windows-WindowsUpdateClient" && group.Count == 2 &&
                                group.Problem == "Windows Update installation succeeded") &&
@@ -394,8 +394,8 @@ static void TestGrouping()
     Assert(chineseGroups.Select(group => (group.Provider, group.EventId, group.Count)).Order().SequenceEqual(identity) &&
            chineseGroups.Any(group => group.Problem == "Windows Update 安裝成功"));
     var relabeled = groups.Select(ProblemGrouping.Relabel).ToArray();
-    Assert(relabeled.Select(group => (group.Provider, group.EventId, group.Count, group.Problem, group.Severity)).Order()
-        .SequenceEqual(chineseGroups.Select(group => (group.Provider, group.EventId, group.Count, group.Problem, group.Severity)).Order()));
+    Assert(relabeled.Select(group => (group.Provider, group.EventId, group.Count, group.Problem, group.Severity, group.Level)).Order()
+        .SequenceEqual(chineseGroups.Select(group => (group.Provider, group.EventId, group.Count, group.Problem, group.Severity, group.Level)).Order()));
     Assert(EventQuery.ProblemRules.All(rule => AppLocalization.Text(rule.Problem, "en") != rule.Problem));
     var fallback = Row(999, "Unknown", "details");
     Assert(EventQuery.Matches(fallback, EventQuery.Parse("Unknown Event ID", 3, TimeSpan.Zero)));
@@ -821,34 +821,35 @@ static void TestUiQueryCompletion()
                    detailsBox.Parent is Grid contentGrid && contentGrid.ColumnDefinitions.Count == 0 &&
                    !copyXmlButton.IsEnabled && occurrencesTab.Header.ToString() == "Group Events (2)" &&
                    ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "Last 48 hours" &&
-                   searchBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && timeBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && levelBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue &&
-                   systemBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && applicationBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue &&
-                   activeFiltersText.Text.Contains("Last 48 hours") && activeFiltersText.Text.Contains("System + Application"));
+                   searchBox.ReadLocalValue(Control.BorderBrushProperty) == DependencyProperty.UnsetValue && timeBox.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue && levelBox.ReadLocalValue(Control.BorderBrushProperty) == DependencyProperty.UnsetValue &&
+                   systemBox.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue && applicationBox.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue &&
+                   activeFiltersText.Text.Contains("Last 48 hours") && activeFiltersText.Text.Contains("System + Application") &&
+                   timeBox.VerticalContentAlignment == VerticalAlignment.Center && timeBox.Padding == new Thickness(7, 4, 7, 4));
             searchBox.Text = "disk 153";
-            Assert(searchBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Keyword: disk") &&
+            Assert(searchBox.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Keyword: disk") &&
                    activeFiltersText.Text.Contains("Event ID: 153"));
             searchBox.Clear();
-            Assert(searchBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
+            Assert(searchBox.ReadLocalValue(Control.BorderBrushProperty) == DependencyProperty.UnsetValue);
             includeXmlBox.IsChecked = true;
-            Assert(includeXmlBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Include XML"));
+            Assert(includeXmlBox.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Include XML"));
             includeXmlBox.IsChecked = false;
             levelBox.SelectedIndex = 3;
-            Assert(levelBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("All"));
+            Assert(levelBox.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("All"));
             levelBox.SelectedIndex = 2;
-            Assert(levelBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
+            Assert(levelBox.ReadLocalValue(Control.BorderBrushProperty) == DependencyProperty.UnsetValue);
             var originalTime = timeBox.SelectedItem;
             timeBox.SelectedItem = timeBox.Items.OfType<ComboBoxItem>().First(item => item.Tag.ToString() == "custom");
-            Assert(fromDate.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue);
+            Assert(fromDate.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue);
             timeBox.SelectedItem = originalTime;
-            Assert(fromDate.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
+            Assert(fromDate.ReadLocalValue(Control.BorderBrushProperty) == DependencyProperty.UnsetValue);
             applicationBox.IsChecked = false;
-            Assert(applicationBox.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Channels: System"));
+            Assert(applicationBox.ReadLocalValue(Control.BorderBrushProperty) == DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Channels: System"));
             applicationBox.IsChecked = true;
             window.ApplyLanguage("zh-TW", persist: false);
             Assert(searchButton.Content.ToString() == "搜尋" && occurrencesTab.Header.ToString() == "群組事件 (2)" &&
                    eventsGrid.SelectedItem is ProblemGroup &&
                    occurrencesGrid.Items.Count == 2 && detailsTabs.SelectedIndex == 0 &&
-                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時" && timeBox.ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue &&
+                   ((ComboBoxItem)timeBox.SelectedItem).Content.ToString() == "最近 48 小時" && timeBox.ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue &&
                    activeFiltersText.Text.StartsWith("啟用篩選：") && activeFiltersText.Text.Contains("最近 48 小時"));
             window.ApplyLanguage("en", persist: false);
             Assert(searchButton.Content.ToString() == "Search" && occurrencesTab.Header.ToString() == "Group Events (2)" &&
@@ -861,9 +862,9 @@ static void TestUiQueryCompletion()
                    quickSummary.Text.Contains("Channels: System") &&
                    !((CheckBox)quickWindow.FindName("SystemBox")).IsEnabled &&
                    !((CheckBox)quickWindow.FindName("ApplicationBox")).IsEnabled &&
-                   ((TextBox)quickWindow.FindName("SearchBox")).ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue);
+                   ((TextBox)quickWindow.FindName("SearchBox")).ReadLocalValue(Control.BorderBrushProperty) == DependencyProperty.UnsetValue);
             ((TextBox)quickWindow.FindName("SearchBox")).Text = "disk 153";
-            Assert(wheaButton.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && ((TextBox)quickWindow.FindName("SearchBox")).ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue &&
+            Assert(wheaButton.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && ((TextBox)quickWindow.FindName("SearchBox")).ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue &&
                    quickWindow.CurrentStartupOptions().Quick is null);
             quickWindow.ApplyLanguage("zh-TW", persist: false);
             Assert(wheaButton.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue && quickSummary.Text.Contains("disk"));
@@ -890,7 +891,7 @@ static void TestUiQueryCompletion()
             eventsGrid.SelectedItems.Add(otherGroup);
             Assert(window.SelectedExportRows().Count == 3);
             ((ComboBox)window.FindName("SortBox")).SelectedIndex = 4;
-            Assert(((ComboBox)window.FindName("SortBox")).ReadLocalValue(FrameworkElement.StyleProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Sort: Event ID"));
+            Assert(((ComboBox)window.FindName("SortBox")).ReadLocalValue(Control.BorderBrushProperty) != DependencyProperty.UnsetValue && activeFiltersText.Text.Contains("Sort: Event ID"));
             window.Show();
             searchBox.Focus();
             var enter = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, Key.Enter)
