@@ -1,33 +1,27 @@
-# EventFast v1.1.0
+# EventFast v1.1.1
 
-## 新增與改善
+## 修正與改善
 
-- 全新淺色雙語介面：工具列分區、可換行篩選、空結果提示及可調整高度的詳細資料區。
-- 開啟 EVTX（Ctrl+O）、返回本機、重新整理（F5）與重設篩選。
-- 保留多選並匯出全部選取問題；「已掃描事件」更清楚標示匯出範圍。
-- 選取問題自動載入最新事件，瀏覽發生紀錄不再強制切換分頁。
-
-## 修正
-
-- 搜尋框 Enter 被事件詳細資料攔截、手動搜尋與快捷條件狀態不一致。
-- 查詢／匯出互相取代、取消後預覽與匯出資料不同。
-- 大量資料篩選與分組阻塞介面；背景分組現在可取消。
-- Excel 匯出截斷 emoji、非法 XML 字元，以及取消收尾仍覆寫原檔。
-- 窄視窗控制項與狀態裁切；剪貼簿忙碌時提供重試提示。
+- Excel 匯出完整訊息／XML 改為批次範圍讀取，100 筆原生匯出由約 4.3 秒降至約 0.8 秒。
+- 不需要 XML 時不再渲染 XML；找不到 provider metadata 時快取結果，避免重複查詢。
+- 搜尋可輸入多個事件 ID，查詢以分組 XPath 避免超過 Windows 條件數上限。
+- 快捷條件與問題分類共用同一份規則；新增 Kernel-Power 41 至電源問題。
+- 切換語言時重新標示既有分組與嚴重性，不再重新分組，且保持預設排序。
+- 快取大小估算納入訊息內容。
 
 ## English
 
-- Redesigned bilingual desktop UI with wrapping filters, clear empty states, and resizable details.
-- Added Open EVTX, return to local logs, Refresh, and Reset actions.
-- Export all selected problems and preserve selection when sorting or switching languages.
-- Fixed Enter handling, quick-filter state, overlapping operations, and cancelled-query restoration.
-- Moved filtering/grouping off the UI thread with cancellation support.
-- Fixed Unicode/XML export boundaries and cancellation immediately before replacing the destination file.
+- Batched range reads for full Message/XML export; 100-event native export dropped from about 4.3 s to 0.8 s.
+- Skip XML rendering when it is not exported, and cache missing provider metadata.
+- Search accepts multiple event IDs, with nested XPath groups to stay under the Windows term limit.
+- Quick filters and problem classification now share one rule table; Kernel-Power 41 added to power issues.
+- Language switching relabels existing groups and severity without regrouping.
+- Cache size estimates include message text.
 
 ## 下載與驗證 / Download and verification
 
-`EventFast-v1.1.0-win-x64.exe`：Windows 10／11 x64，單檔 self-contained，不需安裝 .NET。
+`EventFast-v1.1.1-win-x64.exe`：Windows 10／11 x64，單檔 self-contained，不需安裝 .NET。
 以同頁 `.sha256` 檔案核對下載檔雜湊。
 
-驗證涵蓋 Release 建置、一般／原生／UI 測試、EVTX 往返、匯出安全及雙語版面。
-完整 Windows／DPI 矩陣與百萬筆壓力測試不在本次驗證範圍。
+驗證涵蓋 Release 建置、一般／原生整合／UI 測試。
+完整 Windows／DPI 矩陣與百萬筆匯出壓力測試不在本次驗證範圍。
